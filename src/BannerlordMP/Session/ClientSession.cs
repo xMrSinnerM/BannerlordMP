@@ -96,7 +96,8 @@ namespace BannerlordMP.Session
             ReportSyncChange(decision);
 
             ReplayBuffered(GameBridge.NowHours);
-            _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
+            if (Config.ClientSmoothPositions)
+                _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
             _partyStateTimer += dt;
             if (_partyStateTimer >= PartyStateInterval && MobileParty.MainParty != null)
@@ -107,7 +108,7 @@ namespace BannerlordMP.Session
             }
 
             _ledgerTimer += dt;
-            if (_ledgerTimer >= LedgerInterval)
+            if (Config.ClientSyncOwnParty && _ledgerTimer >= LedgerInterval)
             {
                 _ledgerTimer = 0;
                 SendLedgerChanges();
@@ -243,15 +244,15 @@ namespace BannerlordMP.Session
                     QueueOrApply(worldEvent.HostHours, worldEvent);
                     break;
 
-                case PartyRosterMessage roster:
+                case PartyRosterMessage roster when Config.ClientSyncRosters:
                     WorldBridge.ApplyRosters(Parties.Find(roster.PartyId, RealSeconds), roster.Members, roster.Prisoners);
                     break;
 
-                case LedgerStateMessage state:
+                case LedgerStateMessage state when Config.ClientSyncOwnParty:
                     ReconcileLedger(state);
                     break;
 
-                case EncounterRequestMessage encounter:
+                case EncounterRequestMessage encounter when Config.ClientAcceptEncounterRequests:
                     if (!_detached && !Buffering)
                         WorldBridge.StartEncounterWith(Parties.Find(encounter.AttackerPartyId, RealSeconds));
                     break;
@@ -279,12 +280,16 @@ namespace BannerlordMP.Session
             GameBridge.ReleaseOwnParty();
 
             // From here on the host runs the world; this campaign only mirrors it.
-            WorldAuthority.ClientMirroring = true;
+            Log.Info("Client features: " + Config.DescribeClientFeatures());
+            WorldAuthority.ClientMirroring = Config.ClientMirrorWorld;
             var count = 0;
-            foreach (var party in MobileParty.All.ToList())
+            if (Config.ClientPuppetParties)
             {
-                WorldBridge.MakePuppet(party);
-                count++;
+                foreach (var party in MobileParty.All.ToList())
+                {
+                    WorldBridge.MakePuppet(party);
+                    count++;
+                }
             }
             Parties.Rebuild(RealSeconds);
             _welcomed = true;
@@ -308,7 +313,7 @@ namespace BannerlordMP.Session
                     _smoother.Remove(destroyed.PartyId);
                     WorldBridge.Remote(() => GameBridge.DestroyFromHost(Parties.Find(destroyed.PartyId, RealSeconds)));
                     break;
-                case PartySpawnedMessage spawned:
+                case PartySpawnedMessage spawned when Config.ClientMirrorSpawns:
                     var party = WorldBridge.CreateMirrorParty(spawned);
                     if (party != null)
                         Parties.Rebuild(RealSeconds);
@@ -393,7 +398,7 @@ namespace BannerlordMP.Session
                     (unknown ?? (unknown = new List<string>())).Add(position.PartyId);
                     continue;
                 }
-                if (smooth)
+                if (smooth && Config.ClientSmoothPositions)
                 {
                     var current = GameBridge.GetPosition(party);
                     _smoother.SetTarget(position.PartyId, current.X, current.Y, position.X, position.Y, position.IsOnLand, RealSeconds);
@@ -404,9 +409,9 @@ namespace BannerlordMP.Session
                 }
             }
 
-            if (unknown != null)
+            if (unknown != null && Config.ClientMirrorSpawns)
                 RequestUnknownParties(unknown);
-            if (snapshot.IsFull)
+            if (snapshot.IsFull && Config.ClientRemoveMissingParties)
                 RemovePartiesTheHostDoesNotHave(snapshot);
         }
 

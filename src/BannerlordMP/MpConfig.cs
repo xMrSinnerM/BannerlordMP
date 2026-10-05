@@ -25,6 +25,24 @@ namespace BannerlordMP
         public float CatchUpMultiplier = 16f;
         public double CatchUpThresholdHours = 0.5;
 
+        // Client features that can each be switched off on their own, to find which one misbehaves.
+        /// <summary>Switch off this campaign's own world simulation while joined (the host runs it).</summary>
+        public bool ClientMirrorWorld = true;
+        /// <summary>Turn every other party into a puppet (AI off, holding still) while joined.</summary>
+        public bool ClientPuppetParties = true;
+        /// <summary>Create stand-ins for parties the host spawns.</summary>
+        public bool ClientMirrorSpawns = true;
+        /// <summary>Remove local parties the host no longer has.</summary>
+        public bool ClientRemoveMissingParties = true;
+        /// <summary>Apply troop counts of nearby parties from the host.</summary>
+        public bool ClientSyncRosters = true;
+        /// <summary>Keep the player's own party and hero in agreement with the host (gold, troops, items, xp...).</summary>
+        public bool ClientSyncOwnParty = true;
+        /// <summary>Start encounters the host asks for (AI parties attacking you).</summary>
+        public bool ClientAcceptEncounterRequests = true;
+        /// <summary>Blend positions between updates instead of jumping.</summary>
+        public bool ClientSmoothPositions = true;
+
         public static string ModuleDirectory
         {
             get
@@ -48,6 +66,17 @@ namespace BannerlordMP
         }
 
         public MpConfig Clone() => (MpConfig)MemberwiseClone();
+
+        private static bool Flag(Dictionary<string, string> values, string key, bool fallback)
+        {
+            return values.TryGetValue(key, out var raw) && bool.TryParse(raw, out var value) ? value : fallback;
+        }
+
+        public string DescribeClientFeatures()
+        {
+            return $"mirrorWorld={ClientMirrorWorld} puppets={ClientPuppetParties} spawns={ClientMirrorSpawns} removeMissing={ClientRemoveMissingParties} " +
+                   $"rosters={ClientSyncRosters} ownParty={ClientSyncOwnParty} encounterRequests={ClientAcceptEncounterRequests} smoothing={ClientSmoothPositions}";
+        }
 
         public static MpConfig Load()
         {
@@ -90,6 +119,14 @@ namespace BannerlordMP
                     config.SnapshotRateHz = r;
                 if (values.TryGetValue("CatchUpMultiplier", out var mult) && float.TryParse(mult, NumberStyles.Float, CultureInfo.InvariantCulture, out var cm) && cm >= 1)
                     config.CatchUpMultiplier = cm;
+                config.ClientMirrorWorld = Flag(values, "ClientMirrorWorld", config.ClientMirrorWorld);
+                config.ClientPuppetParties = Flag(values, "ClientPuppetParties", config.ClientPuppetParties);
+                config.ClientMirrorSpawns = Flag(values, "ClientMirrorSpawns", config.ClientMirrorSpawns);
+                config.ClientRemoveMissingParties = Flag(values, "ClientRemoveMissingParties", config.ClientRemoveMissingParties);
+                config.ClientSyncRosters = Flag(values, "ClientSyncRosters", config.ClientSyncRosters);
+                config.ClientSyncOwnParty = Flag(values, "ClientSyncOwnParty", config.ClientSyncOwnParty);
+                config.ClientAcceptEncounterRequests = Flag(values, "ClientAcceptEncounterRequests", config.ClientAcceptEncounterRequests);
+                config.ClientSmoothPositions = Flag(values, "ClientSmoothPositions", config.ClientSmoothPositions);
                 if (values.TryGetValue("CatchUpThresholdHours", out var thr) && double.TryParse(thr, NumberStyles.Float, CultureInfo.InvariantCulture, out var t) && t > 0)
                     config.CatchUpThresholdHours = t;
             }
