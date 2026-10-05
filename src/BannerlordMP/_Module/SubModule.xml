@@ -1,23 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Module>
-  <Name value="Bannerlord MP Campaign"/>
+<Module xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/BUTR/Bannerlord.XmlSchemas/master/SubModule.xsd">
   <Id value="BannerlordMP"/>
-  <Version value="v0.3.1"/>
+  <Name value="Bannerlord MP Campaign"/>
+  <Version value="v0.3.2"/>
   <DefaultModule value="false"/>
   <ModuleCategory value="Singleplayer"/>
   <ModuleType value="Community"/>
+  <!-- Hard requirements: only the base game modules. Harmony ships inside this module (0Harmony.dll). -->
   <DependedModules>
-    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.4.2" Optional="true"/>
-    <DependedModule Id="Native" DependentVersion="v1.4.8" Optional="false"/>
-    <DependedModule Id="SandBoxCore" DependentVersion="v1.4.8" Optional="false"/>
-    <DependedModule Id="Sandbox" DependentVersion="v1.4.8" Optional="false"/>
-    <DependedModule Id="StoryMode" DependentVersion="v1.4.8" Optional="true"/>
+    <DependedModule Id="Native"/>
+    <DependedModule Id="SandBoxCore"/>
+    <DependedModule Id="Sandbox"/>
   </DependedModules>
+  <!-- Community dependency metadata (read by BLSE / Bannerlord Mod Manager, ignored by the official launcher):
+       load after Harmony and StoryMode when they are present, but neither is required. -->
+  <DependedModuleMetadatas>
+    <DependedModuleMetadata id="Bannerlord.Harmony" order="LoadBeforeThis" optional="true"/>
+    <DependedModuleMetadata id="Native" order="LoadBeforeThis"/>
+    <DependedModuleMetadata id="SandBoxCore" order="LoadBeforeThis"/>
+    <DependedModuleMetadata id="Sandbox" order="LoadBeforeThis"/>
+    <DependedModuleMetadata id="StoryMode" order="LoadBeforeThis" optional="true"/>
+  </DependedModuleMetadatas>
   <SubModules>
     <SubModule>
       <Name value="BannerlordMP"/>
       <DLLName value="BannerlordMP.dll"/>
       <SubModuleClassType value="BannerlordMP.SubModule"/>
+      <Assemblies>
+        <Assembly value="0Harmony.dll"/>
+        <Assembly value="LiteNetLib.dll"/>
+        <Assembly value="BannerlordMP.Core.dll"/>
+      </Assemblies>
       <Tags/>
     </SubModule>
   </SubModules>
