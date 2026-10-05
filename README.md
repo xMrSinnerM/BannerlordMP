@@ -103,9 +103,11 @@ happens.
 | Your own party and hero | Gold, troops, prisoners, items, health, skill xp, attribute and focus points, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
+| Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations
 
+- **Kingdom votes:** when your clan is a vassal, the AI still votes in kingdom decisions for you on the server.
 - **Not shared yet:**
   - settlement economies and markets (prosperity, stock, prices, so buying doesn't empty the server's market)
   - sieges in progress

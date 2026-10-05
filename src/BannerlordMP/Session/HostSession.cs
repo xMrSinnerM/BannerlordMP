@@ -109,6 +109,21 @@ namespace BannerlordMP.Session
 
         public bool IsDedicated => Config.DedicatedHost;
 
+        /// <summary>A clan led or joined by a player hero (any slot, online or not).</summary>
+        public bool IsPlayerClan(Clan clan)
+        {
+            if (clan == null)
+                return false;
+            foreach (var slot in _slots.Slots)
+            {
+                if (GameBridge.FindHero(slot.HeroId)?.Clan == clan)
+                    return true;
+            }
+            return false;
+        }
+
+        public bool IsPlayerHero(Hero hero) => hero != null && _slots.FindByHero(hero.StringId) != null;
+
         protected override TimeSpeed CurrentSharedSpeed() => _arbiter.Effective;
 
         protected override void OnSpeedRequested(TimeSpeed speed)
