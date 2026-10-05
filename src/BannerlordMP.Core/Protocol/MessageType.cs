@@ -22,5 +22,12 @@ namespace BannerlordMP.Core.Protocol
         JoinAccepted = 18,
         SaveChunk = 19,
         ServerInfo = 20,
+        PartySpawned = 21,
+        PartyRoster = 22,
+        WorldEvent = 23,
+        EncounterRequest = 24,
+        LedgerDelta = 25,
+        LedgerState = 26,
+        PartyInfoRequest = 27,
     }
 }

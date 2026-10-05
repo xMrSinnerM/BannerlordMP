@@ -157,6 +157,37 @@ namespace BannerlordMP.Core.Tests
         }
 
         [Fact]
+        public void WorldReplicationMessages()
+        {
+            var spawned = RoundTrip(new PartySpawnedMessage
+            {
+                HostHours = 3, PartyId = "bandit_1", Name = "Looters", ClanId = "looters", LeaderHeroId = "", HomeSettlementId = "hideout_1",
+                IsLordParty = false, X = 1, Y = 2, IsOnLand = true,
+                Members = new List<TroopCount> { new TroopCount("looter", 12, 1) },
+            });
+            Assert.Equal("Looters", spawned.Name);
+            Assert.Equal(12, spawned.Members[0].Count);
+
+            var roster = RoundTrip(new PartyRosterMessage { PartyId = "p", Members = new List<TroopCount> { new TroopCount("a", 1, 0) } });
+            Assert.Equal("p", roster.PartyId);
+
+            var world = RoundTrip(new WorldEventMessage { HostHours = 9, Kind = WorldEventKind.SettlementOwner, A = "town_V1", B = "lord_1" });
+            Assert.Equal(WorldEventKind.SettlementOwner, world.Kind);
+            Assert.Equal("lord_1", world.B);
+
+            Assert.Equal("x", RoundTrip(new EncounterRequestMessage { AttackerPartyId = "x" }).AttackerPartyId);
+
+            var delta = RoundTrip(new LedgerDeltaMessage { Seq = 4, Delta = new Dictionary<string, int> { { "g", -5 } } });
+            Assert.Equal(4, delta.Seq);
+            Assert.Equal(-5, delta.Delta["g"]);
+
+            var state = RoundTrip(new LedgerStateMessage { AckSeq = 4, State = new Dictionary<string, int> { { "m:recruit", 7 } } });
+            Assert.Equal(7, state.State["m:recruit"]);
+
+            Assert.Equal(new List<string> { "a" }, RoundTrip(new PartyInfoRequestMessage { PartyIds = new List<string> { "a" } }).PartyIds);
+        }
+
+        [Fact]
         public void UnknownTypeIsRejected()
         {
             Assert.Throws<InvalidDataException>(() => MessageCodec.Decode(new byte[] { 250 }));

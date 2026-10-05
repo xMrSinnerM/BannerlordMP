@@ -44,6 +44,27 @@ namespace BannerlordMP.Core.Protocol
             return bytes;
         }
 
+        public static void WriteCounters(this BinaryWriter writer, Dictionary<string, int> counters)
+        {
+            writer.Write(counters.Count);
+            foreach (var pair in counters)
+            {
+                writer.WriteNullable(pair.Key);
+                writer.Write(pair.Value);
+            }
+        }
+
+        public static Dictionary<string, int> ReadCounters(this BinaryReader reader)
+        {
+            var count = reader.ReadInt32();
+            if (count < 0 || count > MaxListLength)
+                throw new InvalidDataException($"Counter count {count} out of range.");
+            var counters = new Dictionary<string, int>(count);
+            for (var i = 0; i < count; i++)
+                counters[reader.ReadString()] = reader.ReadInt32();
+            return counters;
+        }
+
         public static void WriteNullable(this BinaryWriter writer, string value) => writer.Write(value ?? string.Empty);
     }
 }

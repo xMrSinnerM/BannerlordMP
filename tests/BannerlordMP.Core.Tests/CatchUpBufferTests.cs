@@ -82,16 +82,19 @@ namespace BannerlordMP.Core.Tests
         }
 
         [Fact]
-        public void PartyRemovalsKeepOrder()
+        public void WorldUpdatesKeepOrder()
         {
             var buffer = new CatchUpBuffer();
-            buffer.Add(new PartyDestroyedMessage { HostHours = 2, PartyId = "b" });
-            buffer.Add(new PartyDestroyedMessage { HostHours = 1, PartyId = "a" });
-            buffer.Add(new PartyDestroyedMessage { HostHours = 5, PartyId = "c" });
+            buffer.Add(2, new PartyDestroyedMessage { HostHours = 2, PartyId = "b" });
+            buffer.Add(1, new PartySpawnedMessage { HostHours = 1, PartyId = "b" });
+            buffer.Add(5, new WorldEventMessage { HostHours = 5, Kind = WorldEventKind.War, A = "x", B = "y" });
 
-            var (_, destroyed) = buffer.DrainUntil(3);
-            Assert.Equal(new List<string> { "a", "b" }, destroyed.Select(d => d.PartyId).ToList());
+            var (_, events) = buffer.DrainUntil(3);
+            Assert.IsType<PartySpawnedMessage>(events[0]);
+            Assert.IsType<PartyDestroyedMessage>(events[1]);
+            Assert.Equal(2, events.Count);
             Assert.Equal(5, buffer.LatestHostHours);
+            Assert.IsType<WorldEventMessage>(buffer.DrainAll().Events.Single());
         }
     }
 }

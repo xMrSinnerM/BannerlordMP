@@ -156,7 +156,8 @@ namespace BannerlordMP.Game
         {
             if (string.IsNullOrEmpty(stringId) || Campaign.Current == null)
                 return null;
-            return Campaign.Current.CampaignObjectManager.Find<MobileParty>(stringId);
+            return Campaign.Current.CampaignObjectManager.Find<MobileParty>(stringId)
+                ?? MobileParty.All.FirstOrDefault(p => p.StringId == stringId);
         }
 
         public static Hero FindHero(string stringId)
@@ -176,13 +177,17 @@ namespace BannerlordMP.Game
         /// Stops a party from moving or being engaged by AI. Used for other players' parties (they are moved by
         /// the network) and for parties stuck in a battle another player is fighting.
         /// </summary>
-        public static void Freeze(MobileParty party)
+        /// <param name="ignoredByOthers">
+        /// True to also make AI parties ignore it (offline players, parties mid-battle elsewhere). An online
+        /// player's party stays a valid target, so AI on the host can still hunt them.
+        /// </param>
+        public static void Freeze(MobileParty party, bool ignoredByOthers = true)
         {
             if (party == null || party == MobileParty.MainParty)
                 return;
             party.Ai.DisableAi();
             party.SetMoveModeHold();
-            party.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
+            party.IgnoreByOtherPartiesTill(ignoredByOthers ? CampaignTime.YearsFromNow(100) : CampaignTime.Now);
         }
 
         /// <summary>Dedicated host: keep the server's own party still and out of every encounter.</summary>

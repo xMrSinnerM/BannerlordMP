@@ -11,13 +11,14 @@ namespace BannerlordMP.Core.Sync
     /// </summary>
     /// <remarks>
     /// Position snapshots are merged rather than queued one by one: only the newest position of each party
-    /// up to the local time matters. Party removals are kept in order and never dropped.
+    /// up to the local time matters. Other world updates (parties spawning or being removed, owners changing,
+    /// wars...) are kept in order and never dropped.
     /// </remarks>
     public sealed class CatchUpBuffer
     {
         private readonly int _maxSnapshots;
         private readonly LinkedList<WorldSnapshotMessage> _snapshots = new LinkedList<WorldSnapshotMessage>();
-        private readonly LinkedList<PartyDestroyedMessage> _destroyed = new LinkedList<PartyDestroyedMessage>();
+        private readonly LinkedList<(double HostHours, INetMessage Message)> _events = new LinkedList<(double, INetMessage)>();
 
         public CatchUpBuffer(int maxSnapshots = 512)
         {
@@ -27,8 +28,8 @@ namespace BannerlordMP.Core.Sync
         }
 
         public int SnapshotCount => _snapshots.Count;
-        public int DestroyedCount => _destroyed.Count;
-        public bool IsEmpty => _snapshots.Count == 0 && _destroyed.Count == 0;
+        public int EventCount => _events.Count;
+        public bool IsEmpty => _snapshots.Count == 0 && _events.Count == 0;
 
         /// <summary>Host time of the newest buffered update, or null if empty.</summary>
         public double? LatestHostHours
@@ -38,8 +39,8 @@ namespace BannerlordMP.Core.Sync
                 double? latest = null;
                 if (_snapshots.Count > 0)
                     latest = _snapshots.Last.Value.HostHours;
-                if (_destroyed.Count > 0 && (latest == null || _destroyed.Last.Value.HostHours > latest))
-                    latest = _destroyed.Last.Value.HostHours;
+                if (_events.Count > 0 && (latest == null || _events.Last.Value.HostHours > latest))
+                    latest = _events.Last.Value.HostHours;
                 return latest;
             }
         }
@@ -51,13 +52,14 @@ namespace BannerlordMP.Core.Sync
                 MergeOldestPair();
         }
 
-        public void Add(PartyDestroyedMessage destroyed) => InsertOrdered(_destroyed, destroyed, d => d.HostHours);
+        /// <summary>Queues a world update that happened at <paramref name="hostHours"/> on the host.</summary>
+        public void Add(double hostHours, INetMessage message) => InsertOrdered(_events, (HostHours: hostHours, Message: message), e => e.HostHours);
 
         /// <summary>
         /// Removes and returns everything that happened at or before <paramref name="localHours"/>.
-        /// All due snapshots are merged into one (null if none were due); removals keep their order.
+        /// All due snapshots are merged into one (null if none were due); other updates keep their order.
         /// </summary>
-        public (WorldSnapshotMessage Snapshot, List<PartyDestroyedMessage> Destroyed) DrainUntil(double localHours)
+        public (WorldSnapshotMessage Snapshot, List<INetMessage> Events) DrainUntil(double localHours)
         {
             WorldSnapshotMessage merged = null;
             while (_snapshots.Count > 0 && _snapshots.First.Value.HostHours <= localHours)
@@ -67,22 +69,22 @@ namespace BannerlordMP.Core.Sync
                 merged = merged == null ? next : Merge(merged, next);
             }
 
-            var destroyed = new List<PartyDestroyedMessage>();
-            while (_destroyed.Count > 0 && _destroyed.First.Value.HostHours <= localHours)
+            var events = new List<INetMessage>();
+            while (_events.Count > 0 && _events.First.Value.HostHours <= localHours)
             {
-                destroyed.Add(_destroyed.First.Value);
-                _destroyed.RemoveFirst();
+                events.Add(_events.First.Value.Message);
+                _events.RemoveFirst();
             }
 
-            return (merged, destroyed);
+            return (merged, events);
         }
 
-        public (WorldSnapshotMessage Snapshot, List<PartyDestroyedMessage> Destroyed) DrainAll() => DrainUntil(double.MaxValue);
+        public (WorldSnapshotMessage Snapshot, List<INetMessage> Events) DrainAll() => DrainUntil(double.MaxValue);
 
         public void Clear()
         {
             _snapshots.Clear();
-            _destroyed.Clear();
+            _events.Clear();
         }
 
         /// <summary>Combines an older and a newer snapshot: the newer position wins for every party in both.</summary>

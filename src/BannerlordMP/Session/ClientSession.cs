@@ -13,9 +13,10 @@ using TaleWorlds.CampaignSystem.Party;
 namespace BannerlordMP.Session
 {
     /// <summary>
-    /// A joined player. The client runs its own copy of the campaign but treats the host as the truth:
-    /// its clock follows the host's, other parties are moved to where the host says they are, and only
-    /// the client's own party and its own battles are decided locally.
+    /// A joined player. The client's campaign is a mirror of the host's world: its world simulation (AI,
+    /// economy, spawning, diplomacy) is switched off, parties are puppets moved by the host, and world changes
+    /// arrive as messages. What the client decides itself is its own party's movement, what the player does
+    /// (trading, recruiting, dialogue), and the battles it fights.
     /// </summary>
     /// <remarks>
     /// When the client is in a battle (or any other mission) its campaign stops, while the host's world keeps
@@ -26,21 +27,28 @@ namespace BannerlordMP.Session
     internal sealed class ClientSession : MpSession
     {
         private const float PartyStateInterval = 0.1f;
+        private const float LedgerInterval = 1f;
+        private const double PartyRequestCooldownSeconds = 10;
+        private const int MissingSnapshotsBeforeRemoval = 2;
 
         private readonly string _heroId;
         private readonly string _resumeToken;
         private readonly TimeSyncController _sync;
         private readonly CatchUpBuffer _buffer = new CatchUpBuffer();
+        private readonly ClientLedger _ledger = new ClientLedger();
+        private readonly PositionSmoother _smoother;
         private readonly HashSet<string> _frozenRemoteParties = new HashSet<string>();
+        private readonly Dictionary<string, int> _missingFromHost = new Dictionary<string, int>();
+        private readonly Dictionary<string, double> _requestedParties = new Dictionary<string, double>();
 
         private int _playerId = -1;
         private bool _welcomed;
         private PlayerActivity _activity = PlayerActivity.Map;
         private bool _detached;
-        private bool _hadBattle;
         private bool _hostDetached;
         private SyncAction _lastAction = SyncAction.FollowHost;
         private float _partyStateTimer;
+        private float _ledgerTimer;
 
         /// <param name="resumeToken">One-time token from the join that downloaded this world.</param>
         /// <param name="heroId">The player's hero in that world.</param>
@@ -49,6 +57,7 @@ namespace BannerlordMP.Session
             _heroId = heroId;
             _resumeToken = resumeToken;
             _sync = new TimeSyncController(config.ToSyncSettings());
+            _smoother = new PositionSmoother(1.0 / config.SnapshotRateHz);
 
             Net = target.CreateClientTransport();
             Net.PeerDisconnected += (peer, reason) =>
@@ -86,6 +95,7 @@ namespace BannerlordMP.Session
             ReportSyncChange(decision);
 
             ReplayBuffered(GameBridge.NowHours);
+            _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
             _partyStateTimer += dt;
             if (_partyStateTimer >= PartyStateInterval && MobileParty.MainParty != null)
@@ -93,6 +103,13 @@ namespace BannerlordMP.Session
                 _partyStateTimer = 0;
                 var position = GameBridge.GetPosition(MobileParty.MainParty);
                 Net.SendToAll(new PartyStateMessage { X = position.X, Y = position.Y, IsOnLand = position.IsOnLand }, reliable: false);
+            }
+
+            _ledgerTimer += dt;
+            if (_ledgerTimer >= LedgerInterval)
+            {
+                _ledgerTimer = 0;
+                SendLedgerChanges();
             }
         }
 
@@ -112,13 +129,20 @@ namespace BannerlordMP.Session
             if (!_welcomed || mapEvent == null)
                 return;
 
+            // Our own party's losses, loot and prisoners travel through the ledger; report the AI parties we fought.
             var result = new BattleResultMessage { WinningSide = (int)mapEvent.WinningSide };
             foreach (var partyBase in mapEvent.InvolvedParties)
             {
                 var party = partyBase?.MobileParty;
-                if (party == null || (IsPlayerParty(party) && party != MobileParty.MainParty))
+                if (party == null || party == MobileParty.MainParty || IsPlayerParty(party))
                     continue;
-                result.Parties.Add(CaptureOutcome(party));
+                result.Parties.Add(new PartyOutcome
+                {
+                    PartyId = party.StringId,
+                    Destroyed = !party.IsActive || party.MemberRoster.TotalHealthyCount == 0,
+                    Members = GameBridge.CaptureRoster(party.MemberRoster),
+                    Prisoners = GameBridge.CaptureRoster(party.PrisonRoster),
+                });
             }
             Net.SendToAll(result);
         }
@@ -127,6 +151,14 @@ namespace BannerlordMP.Session
         {
             // Only the host decides which parties stop existing; local destructions come from our own battles,
             // which the host learns about through the battle result.
+        }
+
+        /// <summary>A world change happened in our game. If the player caused it (not the network), tell the host.</summary>
+        public override void OnLocalWorldEvent(WorldEventKind kind, string a, string b)
+        {
+            if (!_welcomed || WorldBridge.ApplyingRemote)
+                return;
+            Net.SendToAll(new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b });
         }
 
         public override void SendChat(string text)
@@ -142,15 +174,15 @@ namespace BannerlordMP.Session
                 yield break;
             }
             var behind = _sync.EstimateHostHours(RealSeconds) - GameBridge.NowHours;
-            yield return $"Joined as player #{_playerId}, host time {_sync.HostSpeed}{(_hostDetached ? " (host in a mission)" : "")}, {_sync.State}, {behind:0.00}h behind, {_buffer.SnapshotCount} buffered updates";
+            yield return $"Joined as player #{_playerId}, host time {_sync.HostSpeed}{(_hostDetached ? " (host in a mission)" : "")}, {_sync.State}, " +
+                         $"{behind:0.00}h behind, {_buffer.SnapshotCount + _buffer.EventCount} buffered updates, {_ledger.UnackedCount} unconfirmed party changes";
             foreach (var p in Players.Values.OrderBy(p => p.Id))
                 yield return $"  #{p.Id} {p.Name} hero={p.HeroId} party={p.PartyId} {p.Activity} wants={p.RequestedSpeed}";
         }
 
         public override void Dispose()
         {
-            foreach (var id in _frozenRemoteParties)
-                GameBridge.Unfreeze(GameBridge.FindParty(id), enableAi: true);
+            WorldAuthority.ClientMirroring = false;
             base.Dispose();
         }
 
@@ -171,18 +203,7 @@ namespace BannerlordMP.Session
                     break;
 
                 case WelcomeMessage welcome:
-                    _playerId = welcome.PlayerId;
-                    _welcomed = true;
-                    var hero = GameBridge.FindHero(_heroId);
-                    if (hero == null)
-                    {
-                        Log.Notify("Your hero is missing from the downloaded world.");
-                        RequestStop();
-                        break;
-                    }
-                    GameBridge.TakeControlOf(hero);
-                    GameBridge.ReleaseOwnParty();
-                    Log.Notify($"Joined! You are {hero.Name}.");
+                    OnWelcome(welcome);
                     break;
 
                 case RejectMessage reject:
@@ -205,19 +226,87 @@ namespace BannerlordMP.Session
                     if (Buffering)
                         _buffer.Add(snapshot);
                     else
-                        ApplySnapshot(snapshot);
+                        ApplySnapshot(snapshot, smooth: true);
                     break;
 
                 case PartyDestroyedMessage destroyed:
-                    if (Buffering || destroyed.HostHours > GameBridge.NowHours)
-                        _buffer.Add(destroyed);
-                    else
-                        GameBridge.DestroyFromHost(Parties.Find(destroyed.PartyId, RealSeconds));
+                    QueueOrApply(destroyed.HostHours, destroyed);
+                    break;
+
+                case PartySpawnedMessage spawned:
+                    _requestedParties.Remove(spawned.PartyId);
+                    QueueOrApply(spawned.HostHours, spawned);
+                    break;
+
+                case WorldEventMessage worldEvent:
+                    QueueOrApply(worldEvent.HostHours, worldEvent);
+                    break;
+
+                case PartyRosterMessage roster:
+                    WorldBridge.ApplyRosters(Parties.Find(roster.PartyId, RealSeconds), roster.Members, roster.Prisoners);
+                    break;
+
+                case LedgerStateMessage state:
+                    ReconcileLedger(state);
+                    break;
+
+                case EncounterRequestMessage encounter:
+                    if (!_detached && !Buffering)
+                        WorldBridge.StartEncounterWith(Parties.Find(encounter.AttackerPartyId, RealSeconds));
                     break;
 
                 case ChatMessage chat:
                     if (chat.PlayerId != _playerId)
                         Log.Notify($"{NameOf(chat.PlayerId)}: {chat.Text}");
+                    break;
+            }
+        }
+
+        private void OnWelcome(WelcomeMessage welcome)
+        {
+            var hero = GameBridge.FindHero(_heroId);
+            if (hero == null)
+            {
+                Log.Notify("Your hero is missing from the downloaded world.");
+                RequestStop();
+                return;
+            }
+            _playerId = welcome.PlayerId;
+            _welcomed = true;
+            GameBridge.TakeControlOf(hero);
+            GameBridge.ReleaseOwnParty();
+
+            // From here on the host runs the world; this campaign only mirrors it.
+            WorldAuthority.ClientMirroring = true;
+            foreach (var party in MobileParty.All)
+                WorldBridge.MakePuppet(party);
+            Parties.Rebuild(RealSeconds);
+            Log.Notify($"Joined! You are {hero.Name}.");
+        }
+
+        private void QueueOrApply(double hostHours, INetMessage message)
+        {
+            if (Buffering || hostHours > GameBridge.NowHours)
+                _buffer.Add(hostHours, message);
+            else
+                ApplyWorldUpdate(message);
+        }
+
+        private void ApplyWorldUpdate(INetMessage message)
+        {
+            switch (message)
+            {
+                case PartyDestroyedMessage destroyed:
+                    _smoother.Remove(destroyed.PartyId);
+                    WorldBridge.Remote(() => GameBridge.DestroyFromHost(Parties.Find(destroyed.PartyId, RealSeconds)));
+                    break;
+                case PartySpawnedMessage spawned:
+                    var party = WorldBridge.CreateMirrorParty(spawned);
+                    if (party != null)
+                        Parties.Rebuild(RealSeconds);
+                    break;
+                case WorldEventMessage worldEvent:
+                    WorldBridge.ApplyWorldEvent(worldEvent);
                     break;
             }
         }
@@ -233,6 +322,9 @@ namespace BannerlordMP.Session
             _detached = activity.IsDetached(Config.DetachDuringConversations);
             Net.SendToAll(new ActivityChangedMessage { Activity = activity });
 
+            if (!wasDetached && _detached)
+                _smoother.Clear();
+
             if (!wasDetached && _detached && activity == PlayerActivity.Mission && MapEvent.PlayerMapEvent != null)
             {
                 // Tell the host which parties are tied up in our battle so it freezes them in the real world.
@@ -243,14 +335,6 @@ namespace BannerlordMP.Session
                         started.PartyIds.Add(party.MobileParty.StringId);
                 }
                 Net.SendToAll(started);
-                _hadBattle = true;
-            }
-
-            if (wasDetached && !_detached && _hadBattle && activity == PlayerActivity.Map)
-            {
-                // Loot, prisoners and recruits are settled in the screens after the battle, so send our party once more.
-                _hadBattle = false;
-                Net.SendToAll(new BattleResultMessage { Parties = { CaptureOutcome(MobileParty.MainParty) } });
             }
         }
 
@@ -259,9 +343,14 @@ namespace BannerlordMP.Session
             if (decision.Action == _lastAction)
                 return;
             if (decision.Action == SyncAction.CatchUp)
+            {
+                _smoother.Clear();
                 Log.Notify($"Catching up with the world ({decision.HoursBehind:0.0} hours)...");
+            }
             else if (_lastAction == SyncAction.CatchUp)
+            {
                 Log.Notify("Caught up.");
+            }
             _lastAction = decision.Action;
         }
 
@@ -270,22 +359,115 @@ namespace BannerlordMP.Session
             if (_buffer.IsEmpty)
                 return;
             // Once caught up, anything still buffered is due.
-            var (snapshot, destroyed) = _sync.State == SyncAction.CatchUp ? _buffer.DrainUntil(localHours) : _buffer.DrainAll();
+            var (snapshot, events) = _sync.State == SyncAction.CatchUp ? _buffer.DrainUntil(localHours) : _buffer.DrainAll();
+            foreach (var message in events)
+                ApplyWorldUpdate(message);
             if (snapshot != null)
-                ApplySnapshot(snapshot);
-            foreach (var d in destroyed)
-                GameBridge.DestroyFromHost(Parties.Find(d.PartyId, RealSeconds));
+                ApplySnapshot(snapshot, smooth: _sync.State != SyncAction.CatchUp);
         }
 
-        private void ApplySnapshot(WorldSnapshotMessage snapshot)
+        private void ApplySnapshot(WorldSnapshotMessage snapshot, bool smooth)
         {
             var ownId = MobileParty.MainParty?.StringId;
+            List<string> unknown = null;
             foreach (var position in snapshot.Parties)
             {
                 if (position.PartyId == ownId)
                     continue;
-                GameBridge.SetPosition(Parties.Find(position.PartyId, RealSeconds), position.X, position.Y, position.IsOnLand);
+                var party = Parties.Find(position.PartyId, RealSeconds);
+                if (party == null)
+                {
+                    (unknown ?? (unknown = new List<string>())).Add(position.PartyId);
+                    continue;
+                }
+                if (smooth)
+                {
+                    var current = GameBridge.GetPosition(party);
+                    _smoother.SetTarget(position.PartyId, current.X, current.Y, position.X, position.Y, position.IsOnLand, RealSeconds);
+                }
+                else
+                {
+                    GameBridge.SetPosition(party, position.X, position.Y, position.IsOnLand);
+                }
             }
+
+            if (unknown != null)
+                RequestUnknownParties(unknown);
+            if (snapshot.IsFull)
+                RemovePartiesTheHostDoesNotHave(snapshot);
+        }
+
+        /// <summary>Parties the host spawned while we were loading (or whose spawn message we missed).</summary>
+        private void RequestUnknownParties(List<string> ids)
+        {
+            var now = RealSeconds;
+            var request = new PartyInfoRequestMessage();
+            foreach (var id in ids)
+            {
+                if (_requestedParties.TryGetValue(id, out var at) && now - at < PartyRequestCooldownSeconds)
+                    continue;
+                _requestedParties[id] = now;
+                request.PartyIds.Add(id);
+            }
+            if (request.PartyIds.Count > 0)
+                Net.SendToAll(request);
+        }
+
+        /// <summary>
+        /// A full snapshot lists every party on the host. Anything we have that it lacks (destroyed while we were
+        /// loading) goes, after being missing from two snapshots in a row so a race cannot remove a fresh party.
+        /// </summary>
+        private void RemovePartiesTheHostDoesNotHave(WorldSnapshotMessage snapshot)
+        {
+            var onHost = new HashSet<string>(snapshot.Parties.Select(p => p.PartyId));
+            var stillMissing = new HashSet<string>();
+            foreach (var party in MobileParty.All.ToList())
+            {
+                if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || onHost.Contains(party.StringId))
+                    continue;
+                if (party.IsGarrison || party.IsMilitia || party.ActualClan == Clan.PlayerClan || IsPlayerParty(party))
+                    continue;
+
+                stillMissing.Add(party.StringId);
+                _missingFromHost.TryGetValue(party.StringId, out var count);
+                if (++count >= MissingSnapshotsBeforeRemoval)
+                {
+                    Log.Info("Removing party the host does not have: " + party.StringId);
+                    WorldBridge.Remote(() => GameBridge.DestroyFromHost(party));
+                    _missingFromHost.Remove(party.StringId);
+                    stillMissing.Remove(party.StringId);
+                }
+                else
+                {
+                    _missingFromHost[party.StringId] = count;
+                }
+            }
+            foreach (var id in _missingFromHost.Keys.Where(id => !stillMissing.Contains(id)).ToList())
+                _missingFromHost.Remove(id);
+        }
+
+        private void SendLedgerChanges()
+        {
+            var change = _ledger.Capture(WorldBridge.CaptureLedger(MobileParty.MainParty));
+            if (change.HasValue)
+                Net.SendToAll(new LedgerDeltaMessage { Seq = change.Value.Seq, Delta = change.Value.Delta });
+        }
+
+        private void ReconcileLedger(LedgerStateMessage state)
+        {
+            var main = MobileParty.MainParty;
+            // In a battle the party changes by the second (casualties) and the host's state predates them; wait
+            // until we are back on the map, where the battle's outcome is sent first and then reconciled.
+            if (main == null || _detached)
+                return;
+
+            // Send anything the player did since the last capture first, so the reconcile below cannot overwrite it.
+            SendLedgerChanges();
+            var predicted = _ledger.Reconcile(state.AckSeq, state.State);
+            var correction = Ledger.Diff(WorldBridge.CaptureLedger(main), predicted);
+            if (correction.Count > 0)
+                WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(main, correction, onHost: false));
+            _ledger.Rebase(WorldBridge.CaptureLedger(main));
         }
 
         private void UpdatePlayers(PlayerListMessage list)
@@ -294,24 +476,12 @@ namespace BannerlordMP.Session
             foreach (var p in list.Players)
                 Players[p.Id] = p;
 
-            // Other players' parties are puppets on this machine: moved by snapshots, never by local AI.
+            // Other players' parties are puppets like every other party here. Players who log off stay frozen too:
+            // their hero waits where they left it, as it does on the host.
             var remote = new HashSet<string>(list.Players.Where(p => p.Id != _playerId).Select(p => p.PartyId));
-            // Players who log off stay frozen too: their hero waits where they left it, as it does on the host.
             foreach (var id in remote.Where(id => !_frozenRemoteParties.Contains(id)))
                 GameBridge.Freeze(GameBridge.FindParty(id));
             _frozenRemoteParties.UnionWith(remote);
-        }
-
-        private static PartyOutcome CaptureOutcome(MobileParty party)
-        {
-            return new PartyOutcome
-            {
-                PartyId = party.StringId,
-                Destroyed = !party.IsActive || party.MemberRoster.TotalHealthyCount == 0,
-                LeaderGold = party == MobileParty.MainParty && party.LeaderHero != null ? party.LeaderHero.Gold : -1,
-                Members = GameBridge.CaptureRoster(party.MemberRoster),
-                Prisoners = GameBridge.CaptureRoster(party.PrisonRoster),
-            };
         }
     }
 }

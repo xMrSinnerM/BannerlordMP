@@ -106,6 +106,15 @@ namespace BannerlordMP.Session
 
         public abstract void OnLocalPartyDestroyed(MobileParty party);
 
+        /// <summary>A political or ownership change happened in the local campaign.</summary>
+        public virtual void OnLocalWorldEvent(Core.Protocol.WorldEventKind kind, string a, string b)
+        {
+        }
+
+        public virtual void OnLocalPartyCreated(MobileParty party)
+        {
+        }
+
         public abstract void SendChat(string text);
 
         public abstract IEnumerable<string> Describe();

@@ -41,20 +41,37 @@ On the map
 
 ## Authority model
 
-The host's campaign is the real world. Clients load the same save, take control of their own hero
-(`ChangePlayerCharacterAction`), and from then on:
+The host's campaign is the real world. A joined client takes control of its hero and from then on its
+campaign is a **mirror**: `WorldSimulationPatches` switch off its quarter-hourly, hourly, daily and
+weekly campaign ticks and AI thinking, and every party except the player's own becomes a puppet (AI
+off, holding still). Per-frame logic (the player's own movement, encounters, menus, dialogue) still runs.
+
+The rule, as in BannerlordCoop's encounter design: **sync what actions produce, not the UI that
+produced them.** Menus and dialogue run locally; their effects on the world travel as messages.
 
 | Thing | Who decides | How it travels |
 |---|---|---|
-| World clock (speed + time) | Host (`TimeControlArbiter`) | `TimeState` at 2 Hz and on change |
-| A client's own party movement | That client | `PartyState` at 10 Hz → host teleports the puppet party |
-| Every other party's position | Host | `WorldSnapshot` (delta, full every 20th) at `SnapshotRateHz` |
-| Parties ceasing to exist | Host | `PartyDestroyed` |
-| A battle a client fights | That client | `BattleStarted` (host freezes the parties) → `BattleResult` (host applies rosters, destroys losers) |
-| AI-vs-AI battles | Host | Blocked on clients by the `StartPartyEncounter` patch |
+| World clock (speed and time) | Host (`TimeControlArbiter`) | `TimeState` at 2 Hz and on change |
+| A client's own party movement | That client | `PartyState` at 10 Hz; the host teleports its puppet |
+| Every other party's position | Host | `WorldSnapshot` (delta, full every 20th), smoothed by `PositionSmoother` |
+| Parties appearing / disappearing | Host | `PartySpawned` / `PartyDestroyed`; clients create stand-ins (`WorldBridge.CreateMirrorParty`). Full snapshots self-heal: unknown ids → `PartyInfoRequest`, local extras missing twice → removed |
+| Troops of parties near a player | Host | `PartyRoster` within 30 map units, when changed |
+| Settlement owners, war, peace, clan ↔ kingdom, hero deaths | Host; a client proposes the ones its player caused | `WorldEvent`; every apply is idempotent, so the proposer can receive its own event back |
+| The player's party and hero | Both, merged | Ledger (below) |
+| AI attacking a player | Host detects, client fights | `EncounterRequest` → the client starts the encounter locally |
+| A battle a client fights | That client | `BattleStarted` (host freezes the parties) → `BattleResult` (host applies enemy losses, destroys losers) |
+| AI-vs-AI battles | Host | Clients can't start encounters that don't involve their own party |
 
-Other players' parties are puppets on every machine. Their AI is disabled and other parties ignore them
-(`GameBridge.Freeze`), so only the network moves them.
+### The ledger
+
+A player's party is changed from both ends: the host's simulation pays wages, consumes food and heals;
+the player buys, recruits, loots and levels up on their own machine. `WorldBridge.CaptureLedger` flattens
+the party and hero into named counters (`g` gold, `m:`/`w:` troops and wounded, `p:`/`q:` prisoners,
+`i:` items with modifiers, `hp`, `x:` skill xp, `f:` focus, `a:` attributes). `ClientLedger` (in Core)
+sends local changes as numbered deltas; the host applies them, checking attribute and focus spending
+against the hero's unspent points, and sends back its full state with the last sequence number it
+applied. The client re-applies anything not yet acknowledged, so the player never sees their own action
+undone and then redone. Reconciling waits while the player is in a battle.
 
 ## Shared time control
 
@@ -98,12 +115,11 @@ keeps every party removal, in order.
 The order is chosen so that each step removes a limitation and makes the next one easier.
 
 1. **In-game validation** with a dedicated host: menus, Steam and LAN join, slots and passwords,
-   world transfer, time control, puppet movement, battle freeze, result, catch-up.
-2. **World replication (the key step).** Clients stop running world AI and the host streams all of it:
-   spawn and despawn parties by host command, settlement ownership, sieges, raids, wars and peace. This
-   removes the drift between machines, which causes most of the remaining limitations.
-3. **Interactions as host-validated commands:** trade, recruiting, quests, dialogue outcomes, and
-   clan/kingdom actions.
+   world transfer, time control, mirrored world, ledger, AI attacking players, battle results, catch-up.
+2. **World replication: done in v0.3** (see above). Still open: settlement economies and markets,
+   sieges and raids in progress, quests, relations, marriages, companions, equipment.
+3. **Interactions as host-validated commands:** trade against the server's markets, recruiting from
+   its notables, quests, dialogue outcomes, clan and kingdom actions, sieges and raids.
 4. **Hero death and capture sync**, respawning, and a face editor for new heroes.
 5. **Joint battles** (several players in one battle) using the multiplayer mission stack.
 6. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),

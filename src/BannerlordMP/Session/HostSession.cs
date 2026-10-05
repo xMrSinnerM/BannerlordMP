@@ -26,7 +26,7 @@ namespace BannerlordMP.Session
     /// hero and downloads the world. After loading it they reconnect with a one-time resume token and enter
     /// the game.
     /// </remarks>
-    internal sealed class HostSession : MpSession
+    internal sealed partial class HostSession : MpSession
     {
         private const int FullSnapshotEvery = 20;
         private const float TimeStateInterval = 0.5f;
@@ -139,6 +139,7 @@ namespace BannerlordMP.Session
 
             GameBridge.SetLocalTime(_arbiter.Effective, 0f, unstoppable: false);
             ExpireStaleBattles();
+            TickWorld(dt);
 
             _timeStateTimer += dt;
             if (_timeStateTimer >= TimeStateInterval)
@@ -160,9 +161,15 @@ namespace BannerlordMP.Session
             // A dedicated server's own party never fights: any battle on this machine would stop the world.
             if (Config.DedicatedHost && (attacker == MobileParty.MainParty || defender == MobileParty.MainParty))
                 return false;
-            // Player heroes (online or not) are decided on their owners' machines; frozen parties are mid-battle elsewhere.
-            return !IsRemotePlayerParty(attacker) && !IsRemotePlayerParty(defender)
-                && !IsBattleFrozen(attacker) && !IsBattleFrozen(defender);
+            if (IsBattleFrozen(attacker) || IsBattleFrozen(defender))
+                return false; // Mid-battle on someone's machine.
+            // An AI party caught an online player: that battle is fought on the player's machine.
+            if (IsOnlinePlayerParty(defender) && !IsRemotePlayerParty(attacker))
+                RequestEncounter(attacker, defender);
+            else if (IsOnlinePlayerParty(attacker) && !IsRemotePlayerParty(defender))
+                RequestEncounter(defender, attacker);
+            // Player heroes (online or not) never fight on the host itself.
+            return !IsRemotePlayerParty(attacker) && !IsRemotePlayerParty(defender);
         }
 
         public override void OnLocalBattleEnded(MapEvent mapEvent)
@@ -305,6 +312,8 @@ namespace BannerlordMP.Session
             }
 
             var playerId = state.PlayerId;
+            if (HandleWorldMessage(peer, playerId, message))
+                return;
             switch (message)
             {
                 case TimeRequestMessage request:
@@ -556,7 +565,8 @@ namespace BannerlordMP.Session
             };
             _arbiter.AddPlayer(playerId);
             SyncRequestedSpeeds();
-            GameBridge.Freeze(party);
+            // Moved by its owner over the network, but AI on the host may still hunt it.
+            GameBridge.Freeze(party, ignoredByOthers: false);
 
             Net.Send(peer, new WelcomeMessage
             {
@@ -566,6 +576,7 @@ namespace BannerlordMP.Session
                 DetachDuringConversations = Config.DetachDuringConversations,
             });
             _snapshotCount = 0; // Next snapshot is a full one so the newcomer gets everything.
+            OnPlayerEnteredWorld(peer, playerId, party);
             BroadcastPlayerList();
             BroadcastTimeState();
             UpdateLobby();
@@ -617,16 +628,15 @@ namespace BannerlordMP.Session
                 var party = GameBridge.FindParty(outcome.PartyId);
                 if (party == null)
                     continue;
-                // A client only reports on its own party and the AI parties it fought, never on other players.
-                if ((IsPlayerParty(party) || IsSlotParty(party)) && party != playerParty)
+                // A client reports only on the AI parties it fought. Its own party travels through the ledger, and
+                // other players' parties are never its business.
+                if (party == playerParty || IsPlayerParty(party) || IsSlotParty(party))
                     continue;
 
                 try
                 {
                     GameBridge.ApplyRoster(party.MemberRoster, outcome.Members);
                     GameBridge.ApplyRoster(party.PrisonRoster, outcome.Prisoners);
-                    if (party == playerParty && outcome.LeaderGold >= 0 && party.LeaderHero != null)
-                        party.LeaderHero.Gold = outcome.LeaderGold;
                 }
                 catch (Exception e)
                 {
@@ -675,7 +685,9 @@ namespace BannerlordMP.Session
             ReleaseBattle(playerId);
             var player = Players[playerId];
             Players.Remove(playerId);
-            // The hero stays where it is, frozen, until its owner comes back.
+            OnPlayerLeftWorld(playerId);
+            // The hero stays where it is, frozen and untouchable, until its owner comes back.
+            GameBridge.Freeze(GameBridge.FindParty(player.PartyId));
             if (_arbiter.RemovePlayer(playerId))
                 BroadcastTimeState();
             BroadcastPlayerList();
@@ -719,6 +731,9 @@ namespace BannerlordMP.Session
 
         private bool IsRemotePlayerParty(MobileParty party) =>
             party != null && party != MobileParty.MainParty && (IsPlayerParty(party) || IsSlotParty(party));
+
+        private bool IsOnlinePlayerParty(MobileParty party) =>
+            party != null && party != MobileParty.MainParty && IsPlayerParty(party);
 
         private bool IsSlotParty(MobileParty party)
         {
