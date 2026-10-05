@@ -236,7 +236,12 @@ namespace BannerlordMP.Game
 
         public static void SetPosition(MobileParty party, float x, float y, bool isOnLand)
         {
-            if (party == null || !party.IsActive)
+            // Parties inside a settlement, attached to an army or in a battle are positioned by the game itself;
+            // moving them by hand can leave it in an inconsistent state.
+            if (party == null || !party.IsActive || party.CurrentSettlement != null || party.AttachedTo != null || party.MapEvent != null)
+                return;
+            var current = party.Position;
+            if (Math.Abs(current.X - x) < 0.001f && Math.Abs(current.Y - y) < 0.001f)
                 return;
             party.Position = new CampaignVec2(new Vec2(x, y), isOnLand);
         }

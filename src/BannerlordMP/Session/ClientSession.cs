@@ -49,6 +49,7 @@ namespace BannerlordMP.Session
         private SyncAction _lastAction = SyncAction.FollowHost;
         private float _partyStateTimer;
         private float _ledgerTimer;
+        private bool _loggedFirstSnapshot;
 
         /// <param name="resumeToken">One-time token from the join that downloaded this world.</param>
         /// <param name="heroId">The player's hero in that world.</param>
@@ -272,15 +273,22 @@ namespace BannerlordMP.Session
                 return;
             }
             _playerId = welcome.PlayerId;
-            _welcomed = true;
+            Log.Info($"Client: welcomed as player {_playerId}; taking control of {hero.StringId} (main hero now {Hero.MainHero?.StringId})");
             GameBridge.TakeControlOf(hero);
+            Log.Info($"Client: main hero is {Hero.MainHero?.StringId}, main party {MobileParty.MainParty?.StringId}, clan {Clan.PlayerClan?.StringId}");
             GameBridge.ReleaseOwnParty();
 
             // From here on the host runs the world; this campaign only mirrors it.
             WorldAuthority.ClientMirroring = true;
-            foreach (var party in MobileParty.All)
+            var count = 0;
+            foreach (var party in MobileParty.All.ToList())
+            {
                 WorldBridge.MakePuppet(party);
+                count++;
+            }
             Parties.Rebuild(RealSeconds);
+            _welcomed = true;
+            Log.Info($"Client: {count} parties are now puppets; mirroring the host's world");
             Log.Notify($"Joined! You are {hero.Name}.");
         }
 
@@ -368,6 +376,11 @@ namespace BannerlordMP.Session
 
         private void ApplySnapshot(WorldSnapshotMessage snapshot, bool smooth)
         {
+            if (!_loggedFirstSnapshot)
+            {
+                _loggedFirstSnapshot = true;
+                Log.Info($"Client: first snapshot, {snapshot.Parties.Count} parties (full: {snapshot.IsFull})");
+            }
             var ownId = MobileParty.MainParty?.StringId;
             List<string> unknown = null;
             foreach (var position in snapshot.Parties)

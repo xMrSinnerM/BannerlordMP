@@ -550,6 +550,7 @@ namespace BannerlordMP.Session
                 Reject(peer, reason);
                 return;
             }
+            Log.Info($"Host: {hello.PlayerName} entering the world as {hero.StringId} (party {hero.PartyBelongedTo?.StringId})");
 
             var playerId = _nextPlayerId++;
             var party = hero.PartyBelongedTo;

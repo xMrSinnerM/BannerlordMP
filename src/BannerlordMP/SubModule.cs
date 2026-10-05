@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using BannerlordMP.Game;
 using BannerlordMP.Net;
 using BannerlordMP.Session;
@@ -19,6 +20,7 @@ namespace BannerlordMP
         protected override void OnSubModuleLoad()
         {
             base.OnSubModuleLoad();
+            AppDomain.CurrentDomain.UnhandledException += (sender, args) => Log.Error("Unhandled exception (game may crash)", args.ExceptionObject as Exception);
             try
             {
                 _harmony = new Harmony("bannerlordmp.campaign");
@@ -28,6 +30,7 @@ namespace BannerlordMP
             {
                 Log.Error("Failed to apply patches", e);
             }
+            Log.Info($"BannerlordMP {typeof(SubModule).Assembly.GetName().Version} starting; patched methods: {string.Join(", ", _harmony?.GetPatchedMethods().Select(m => m.DeclaringType?.Name + "." + m.Name) ?? new string[0])}");
 
             Module.CurrentModule.AddInitialStateOption(new InitialStateOption("BannerlordMP_Host", new TextObject("Host Co-op Campaign"), 3,
                 HostMenu.Open, () => (false, null), null, null));
@@ -127,6 +130,7 @@ namespace BannerlordMP
             {
                 var resume = JoinMenu.PendingResume;
                 JoinMenu.PendingResume = null;
+                Log.Info($"Join: world loaded, reconnecting to {resume.Target} as {resume.HeroId}");
                 try
                 {
                     MpSession.Start(new ClientSession(MpConfig.Load(), resume.Target, resume.Token, resume.HeroId));

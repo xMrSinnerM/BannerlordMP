@@ -103,6 +103,7 @@ namespace BannerlordMP.Session
                         return;
                     }
                     _challenge = challenge;
+                    Log.Info($"Join: connected to '{challenge.ServerName}' (password: {challenge.PasswordRequired})");
                     if (challenge.PasswordRequired)
                         PasswordNeeded?.Invoke(challenge.ServerName);
                     else
@@ -110,14 +111,17 @@ namespace BannerlordMP.Session
                     break;
 
                 case SlotListMessage slots:
+                    Log.Info($"Join: {slots.Slots.Count}/{slots.MaxSlots} slots, {slots.Cultures.Count} cultures");
                     SlotsReceived?.Invoke(slots);
                     break;
 
                 case RejectMessage reject:
+                    Log.Info("Join: rejected: " + reject.Reason);
                     Fail(reject.Reason);
                     break;
 
                 case JoinAcceptedMessage accepted:
+                    Log.Info($"Join: accepted as {accepted.HeroName}, world is {accepted.SaveSize} bytes");
                     _accepted = accepted;
                     try
                     {

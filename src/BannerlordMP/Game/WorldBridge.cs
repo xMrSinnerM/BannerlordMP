@@ -251,10 +251,19 @@ namespace BannerlordMP.Game
         /// <summary>A party on a client: no AI, no movement of its own. Positions come from the host.</summary>
         public static void MakePuppet(MobileParty party)
         {
-            if (party == null || party == MobileParty.MainParty)
+            if (party == null || party == MobileParty.MainParty || !party.IsActive)
                 return;
-            party.Ai.DisableAi();
-            party.SetMoveModeHold();
+            try
+            {
+                party.Ai.DisableAi();
+                // Parties inside settlements or attached to armies are held by the game already.
+                if (party.CurrentSettlement == null && party.AttachedTo == null && party.MapEvent == null)
+                    party.SetMoveModeHold();
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not make a puppet of " + party.StringId, e);
+            }
         }
 
         public static void ApplyRosters(MobileParty party, List<TroopCount> members, List<TroopCount> prisoners)

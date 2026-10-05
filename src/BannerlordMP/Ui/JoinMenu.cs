@@ -85,6 +85,12 @@ namespace BannerlordMP.Ui
         /// <summary>Joins a server directly (console command, or an address typed in the browser).</summary>
         public static void ConnectTo(ConnectTarget target)
         {
+            if (target.IsSteam && target.SteamId == SteamService.MySteamId)
+            {
+                // Same Steam account on this PC (two game windows): Steam cannot relay to yourself.
+                target = ConnectTarget.Ip("127.0.0.1", MpConfig.Load().Port);
+                Log.Notify("That server runs on your own Steam account; connecting locally instead.");
+            }
             CloseSearch();
             _connection?.Dispose();
             Log.Notify($"Connecting to {target}...");
@@ -94,8 +100,8 @@ namespace BannerlordMP.Ui
             }
             catch (Exception e)
             {
-                Log.Error("Could not connect", e);
-                Dialogs.Message("Could not join", e.Message);
+                Log.Error("Could not connect to " + target, e);
+                Dialogs.Message("Could not join", e.Message + (target.IsSteam ? "\n\nTry the LAN entry or Direct connect (IP) instead." : ""));
                 return;
             }
             _connection.PasswordNeeded = serverName => Dialogs.Text(serverName, "This server needs a password:",
@@ -138,8 +144,9 @@ namespace BannerlordMP.Ui
                 if (!seenHosts.Add(lobby.HostSteamId))
                     continue;
                 var target = ConnectTarget.Steam(lobby.HostSteamId);
+                var tag = lobby.HostSteamId == SteamService.MySteamId ? "[You]" : lobby.IsFriend ? "[Friend]" : "[Steam]";
                 choices.Add(new Choice<Action>(() => ConnectTo(target),
-                    $"{(lobby.IsFriend ? "[Friend]" : "[Steam]")} {Describe(lobby.Name, lobby.PasswordRequired, lobby.PlayersOnline, lobby.UsedSlots, lobby.MaxSlots)}",
+                    $"{tag} {Describe(lobby.Name, lobby.PasswordRequired, lobby.PlayersOnline, lobby.UsedSlots, lobby.MaxSlots)}",
                     hint: "Over Steam's relay"));
             }
 
@@ -248,6 +255,7 @@ namespace BannerlordMP.Ui
 
         private static void OnWorldReceived(byte[] save, JoinAcceptedMessage accepted)
         {
+            Log.Info($"Join: world received ({save.Length} bytes) for {accepted.HeroName} ({accepted.HeroId})");
             var target = _connection?.Target;
             _connection = null;
             try
@@ -261,6 +269,7 @@ namespace BannerlordMP.Ui
                 return;
             }
 
+            Log.Info("Join: world written as " + JoinSaveName + ", loading");
             PendingResume = new PendingResume { Target = target, Token = accepted.ResumeToken, HeroId = accepted.HeroId };
             Log.Notify($"World downloaded. Loading as {accepted.HeroName}...");
             if (!GameBridge.LoadSave(JoinSaveName, () => PendingResume = null))
