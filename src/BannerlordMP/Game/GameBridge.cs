@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Core.Time;
 using TaleWorlds.CampaignSystem;
@@ -174,6 +175,23 @@ namespace BannerlordMP.Game
         {
             if (Hero.MainHero != hero)
                 ChangePlayerCharacterAction.Apply(hero);
+
+            // ChangePlayerCharacterAction is made for heirs of the same clan, so it leaves "the player's clan"
+            // (Campaign.PlayerDefaultFaction, behind Clan.PlayerClan) on the old clan. Our hero leads its own clan;
+            // the clan and kingdom screens crash when the main hero is not in the player clan.
+            var clan = hero.Clan;
+            if (clan != null && Clan.PlayerClan != clan)
+            {
+                var setter = AccessTools.PropertySetter(typeof(Campaign), "PlayerDefaultFaction");
+                if (setter == null)
+                {
+                    Log.Error("Campaign.PlayerDefaultFaction setter not found; clan screens may crash");
+                    return;
+                }
+                var previous = Clan.PlayerClan?.StringId;
+                setter.Invoke(Campaign.Current, new object[] { clan });
+                Log.Info($"Player clan changed from {previous} to {Clan.PlayerClan?.StringId}");
+            }
         }
 
         /// <summary>
