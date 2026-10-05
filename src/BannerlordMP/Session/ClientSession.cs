@@ -311,7 +311,7 @@ namespace BannerlordMP.Session
             {
                 case PartyDestroyedMessage destroyed:
                     _smoother.Remove(destroyed.PartyId);
-                    WorldBridge.Remote(() => GameBridge.DestroyFromHost(Parties.Find(destroyed.PartyId, RealSeconds)));
+                    WorldBridge.Remote(() => GameBridge.Retire(Parties.Find(destroyed.PartyId, RealSeconds)));
                     break;
                 case PartySpawnedMessage spawned when Config.ClientMirrorSpawns:
                     var party = WorldBridge.CreateMirrorParty(spawned);
@@ -450,8 +450,8 @@ namespace BannerlordMP.Session
                 _missingFromHost.TryGetValue(party.StringId, out var count);
                 if (++count >= MissingSnapshotsBeforeRemoval)
                 {
-                    Log.Info("Removing party the host does not have: " + party.StringId);
-                    WorldBridge.Remote(() => GameBridge.DestroyFromHost(party));
+                    Log.Info("Retiring party the host does not have: " + party.StringId);
+                    WorldBridge.Remote(() => GameBridge.Retire(party));
                     _missingFromHost.Remove(party.StringId);
                     stillMissing.Remove(party.StringId);
                 }

@@ -65,8 +65,6 @@ namespace BannerlordMP.Game
 
         private static void OnMobilePartyDestroyed(MobileParty party, PartyBase destroyer)
         {
-            if (GameBridge.ApplyingRemoteDestroy)
-                return;
             try
             {
                 MpSession.Current?.OnLocalPartyDestroyed(party);

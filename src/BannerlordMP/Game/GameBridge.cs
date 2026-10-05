@@ -31,8 +31,6 @@ namespace BannerlordMP.Game
         /// <summary>True while the mod itself is changing campaign time; patches let those calls through.</summary>
         public static bool ApplyingTime { get; private set; }
 
-        /// <summary>True while the mod itself is destroying a party because the host told it to.</summary>
-        public static bool ApplyingRemoteDestroy { get; private set; }
 
         public static bool CampaignRunning => Campaign.Current != null;
 
@@ -423,22 +421,25 @@ namespace BannerlordMP.Game
 
         public static bool OnCampaignMap => Campaign.Current != null && GameStateManager.Current?.ActiveState is MapState;
 
-        public static void DestroyFromHost(MobileParty party)
+        /// <summary>
+        /// Client: take a party out of the world without destroying it. Destroying runs the game's whole
+        /// destruction chain (village/caravan owners, notables, quests...) against state the client does not
+        /// simulate, which crashed games. A retired party is invisible, inactive and ignored by everyone.
+        /// </summary>
+        public static void Retire(MobileParty party)
         {
-            if (party == null || !party.IsActive || party == MobileParty.MainParty)
+            if (party == null || !party.IsActive || party == MobileParty.MainParty || party.MapEvent != null)
                 return;
-            ApplyingRemoteDestroy = true;
             try
             {
-                DestroyPartyAction.Apply(null, party);
+                party.Ai.DisableAi();
+                party.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
+                party.IsVisible = false;
+                party.IsActive = false;
             }
             catch (Exception e)
             {
-                Log.Error($"Could not destroy party {party.StringId}", e);
-            }
-            finally
-            {
-                ApplyingRemoteDestroy = false;
+                Log.Error($"Could not retire party {party.StringId}", e);
             }
         }
 

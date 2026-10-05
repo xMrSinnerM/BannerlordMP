@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using BannerlordMP.Game;
 using HarmonyLib;
 using TaleWorlds.CampaignSystem;
@@ -38,5 +41,36 @@ namespace BannerlordMP.Patches
         [HarmonyPatch(typeof(Campaign), nameof(Campaign.LateAITick))]
         [HarmonyPrefix]
         private static bool LateAi() => RunLocally();
+    }
+
+    /// <summary>
+    /// The campaign's second scheduler: it gives every party, settlement, clan and hero its hourly and daily
+    /// turn, spread over many frames, and fires the periodic campaign events. Villagers, caravans and bandits
+    /// spawn from here, so on a client it must stay off as well (the host spawns, clients mirror).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class PeriodicEventManagerPatches
+    {
+        private static readonly string[] Methods =
+        {
+            "TickPeriodicEvents", "PeriodicQuarterDailyTick", "MobilePartyHourlyTick", "TickPartialHourlyAi",
+            "PeriodicHourlyTick", "PeriodicDailyTick", "SignalPeriodicEvents",
+        };
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var type = AccessTools.TypeByName("TaleWorlds.CampaignSystem.CampaignPeriodicEventManager");
+            if (type == null)
+            {
+                Log.Error("CampaignPeriodicEventManager not found; clients will keep simulating parts of the world");
+                return Enumerable.Empty<MethodBase>();
+            }
+            var found = Methods.Select(name => (MethodBase)AccessTools.Method(type, name)).Where(m => m != null).ToList();
+            if (found.Count != Methods.Length)
+                Log.Error($"Only {found.Count} of {Methods.Length} periodic event methods found on this game version");
+            return found;
+        }
+
+        private static bool Prefix() => !WorldAuthority.ClientMirroring;
     }
 }
