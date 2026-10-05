@@ -2,12 +2,12 @@
 <Module>
   <Name value="Bannerlord MP Campaign"/>
   <Id value="BannerlordMP"/>
-  <Version value="v0.3.0"/>
+  <Version value="v0.3.1"/>
   <DefaultModule value="false"/>
   <ModuleCategory value="Singleplayer"/>
   <ModuleType value="Community"/>
   <DependedModules>
-    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.2.2" Optional="false"/>
+    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.4.2" Optional="true"/>
     <DependedModule Id="Native" DependentVersion="v1.4.8" Optional="false"/>
     <DependedModule Id="SandBoxCore" DependentVersion="v1.4.8" Optional="false"/>
     <DependedModule Id="Sandbox" DependentVersion="v1.4.8" Optional="false"/>

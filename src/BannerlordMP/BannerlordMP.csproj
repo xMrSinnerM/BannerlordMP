@@ -16,8 +16,9 @@
   <ItemGroup>
     <!-- Compile-only references to the game. The real assemblies come from the game install at runtime. -->
     <PackageReference Include="Bannerlord.ReferenceAssemblies" Version="$(GameVersion)" PrivateAssets="all" ExcludeAssets="runtime" />
-    <!-- Harmony is provided at runtime by the Bannerlord.Harmony module (a declared dependency). -->
-    <PackageReference Include="Lib.Harmony" Version="2.2.2" PrivateAssets="all" ExcludeAssets="runtime" />
+    <!-- Harmony ships inside this module (0Harmony.dll), so the separate Harmony mod is optional. If another mod
+         loaded Harmony first, the game uses that copy; Harmony 2.x is compatible either way. -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.2" />
     <PackageReference Include="LiteNetLib" Version="1.3.1" />
     <!-- Steamworks.NET 20.1.0 is what the game ships and loads (Steam version only). The NuGet package targets
          netstandard2.1, so it is downloaded and referenced for compilation only; the game's copy is used at runtime. -->
@@ -43,7 +44,7 @@
       <ModuleBinDir>$(ModuleDir)bin\Win64_Shipping_Client\</ModuleBinDir>
     </PropertyGroup>
     <ItemGroup>
-      <ModuleBinaries Include="$(OutDir)BannerlordMP.dll;$(OutDir)BannerlordMP.pdb;$(OutDir)BannerlordMP.Core.dll;$(OutDir)BannerlordMP.Core.pdb;$(OutDir)LiteNetLib.dll" />
+      <ModuleBinaries Include="$(OutDir)BannerlordMP.dll;$(OutDir)BannerlordMP.pdb;$(OutDir)BannerlordMP.Core.dll;$(OutDir)BannerlordMP.Core.pdb;$(OutDir)LiteNetLib.dll;$(OutDir)0Harmony.dll" />
       <ModuleFiles Include="_Module\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(ModuleFiles)" DestinationFiles="@(ModuleFiles->'$(ModuleDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />

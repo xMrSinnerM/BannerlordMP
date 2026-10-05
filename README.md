@@ -25,9 +25,11 @@ hero and party; the host's game runs the world.
 
 ## Install
 
-1. Install [Harmony for Bannerlord](https://www.nexusmods.com/mountandblade2bannerlord/mods/2006) (`Bannerlord.Harmony`).
-2. Copy `artifacts/Modules/BannerlordMP` (see [Build](#build)) into `<Bannerlord>/Modules/`.
-3. Enable **Bannerlord MP Campaign** in the launcher, below Harmony and the official modules.
+1. Copy `artifacts/Modules/BannerlordMP` (see [Build](#build)) into `<Bannerlord>/Modules/`.
+2. Enable **Bannerlord MP Campaign** in the launcher, below the official modules.
+3. Harmony (the patching library) is included. If you also use the
+   [Harmony mod](https://www.nexusmods.com/mountandblade2bannerlord/mods/2006) for other mods, keep it
+   above everything else in the load order.
 4. Every player needs the same mod version and the same game version (1.4.8).
 
 ## Play
