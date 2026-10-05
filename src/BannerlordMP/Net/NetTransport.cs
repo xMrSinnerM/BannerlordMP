@@ -8,13 +8,14 @@ using LiteNetLib;
 namespace BannerlordMP.Net
 {
     /// <summary>
-    /// Thin LiteNetLib wrapper. All callbacks are raised from <see cref="Poll"/>, which is called from the
-    /// game's main thread, so handlers can touch game state directly.
+    /// UDP transport (LiteNetLib) for direct IP and LAN play. A server also answers LAN discovery broadcasts
+    /// with a <see cref="ServerInfoMessage"/>.
     /// </summary>
-    internal sealed class NetTransport : IDisposable
+    internal sealed class NetTransport : ITransport
     {
-        private const string ConnectionKey = "BannerlordMP/" + "1";
-        private const int MaxPlayers = 8;
+        public const string DiscoveryMagic = "BMP?";
+        private const string ConnectionKey = "BannerlordMP/2";
+        private const int MaxPeers = 64;
 
         private readonly EventBasedNetListener _listener = new EventBasedNetListener();
         private readonly NetManager _manager;
@@ -29,13 +30,12 @@ namespace BannerlordMP.Net
             _manager = new NetManager(_listener)
             {
                 AutoRecycle = true,
-                DisconnectTimeout = 15000,
-                UnconnectedMessagesEnabled = false,
+                DisconnectTimeout = 20000,
             };
 
             _listener.ConnectionRequestEvent += request =>
             {
-                if (IsServer && _manager.ConnectedPeersCount < MaxPlayers)
+                if (IsServer && _manager.ConnectedPeersCount < MaxPeers)
                     request.AcceptIfKey(ConnectionKey);
                 else
                     request.Reject();
@@ -55,8 +55,7 @@ namespace BannerlordMP.Net
                 INetMessage message;
                 try
                 {
-                    var data = reader.GetRemainingBytes();
-                    message = MessageCodec.Decode(data);
+                    message = MessageCodec.Decode(reader.GetRemainingBytes());
                 }
                 catch (Exception e)
                 {
@@ -65,16 +64,28 @@ namespace BannerlordMP.Net
                 }
                 MessageReceived?.Invoke(peer.Id, message);
             };
+            _listener.NetworkReceiveUnconnectedEvent += (endPoint, reader, type) =>
+            {
+                if (!IsServer || ServerInfoProvider == null || type != UnconnectedMessageType.Broadcast)
+                    return;
+                if (reader.GetString() != DiscoveryMagic)
+                    return;
+                _manager.SendUnconnectedMessage(MessageCodec.Encode(ServerInfoProvider()), endPoint);
+            };
             _listener.NetworkErrorEvent += (endPoint, error) => Log.Error($"Network error {error} ({endPoint})");
         }
 
         public bool IsServer { get; private set; }
-        public bool IsRunning => _manager.IsRunning;
         public int ConnectedPeers => _manager.ConnectedPeersCount;
+
+        /// <summary>Server only: what to answer LAN discovery with.</summary>
+        public Func<ServerInfoMessage> ServerInfoProvider { get; set; }
 
         public void StartServer(int port)
         {
             IsServer = true;
+            _manager.UnconnectedMessagesEnabled = true;
+            _manager.BroadcastReceiveEnabled = true;
             if (!_manager.Start(port))
                 throw new SocketException((int)SocketError.AddressAlreadyInUse);
         }
@@ -89,13 +100,14 @@ namespace BannerlordMP.Net
 
         public void Poll() => _manager.PollEvents();
 
-        public void Send(int peerId, INetMessage message, bool reliable = true)
+        public bool Send(int peerId, INetMessage message, bool reliable = true)
         {
-            if (_peers.TryGetValue(peerId, out var peer))
-                peer.Send(MessageCodec.Encode(message), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);
+            if (!_peers.TryGetValue(peerId, out var peer))
+                return true; // Gone; nothing to retry.
+            peer.Send(MessageCodec.Encode(message), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);
+            return true;
         }
 
-        /// <summary>Client: send to the host. Host: send to every client.</summary>
         public void SendToAll(INetMessage message, bool reliable = true, int exceptPeerId = -1)
         {
             if (_peers.Count == 0)

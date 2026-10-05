@@ -19,7 +19,17 @@
     <!-- Harmony is provided at runtime by the Bannerlord.Harmony module (a declared dependency). -->
     <PackageReference Include="Lib.Harmony" Version="2.2.2" PrivateAssets="all" ExcludeAssets="runtime" />
     <PackageReference Include="LiteNetLib" Version="1.3.1" />
+    <!-- Steamworks.NET 20.1.0 is what the game ships and loads (Steam version only). The NuGet package targets
+         netstandard2.1, so it is downloaded and referenced for compilation only; the game's copy is used at runtime. -->
+    <PackageDownload Include="Steamworks.NET" Version="[20.1.0]" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Steamworks.NET">
+      <HintPath>$(NuGetPackageRoot)steamworks.net\20.1.0\ref\netstandard2.1\Steamworks.NET.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

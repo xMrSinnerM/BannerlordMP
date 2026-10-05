@@ -11,6 +11,34 @@
 All direct calls into the TaleWorlds campaign API go through `Game/GameBridge.cs`, so changes after a game
 update are mostly confined to that one file.
 
+## Joining
+
+```
+Main menu (no campaign loaded)                      Server (campaign on the map)
+  connect (Steam relay, LAN or IP) ───────────────► AuthChallenge(server name, password?, salt, nonce)
+  Hello(server-password proof) ───────────────────► verify → SlotList(slots, cultures)
+  ClaimSlot(slot, hero-password proof)  or
+  CreateHero(name, culture, gender, salt, key) ───► verify / create hero + clan + party → save world
+                                         ◄──────── JoinAccepted(hero, resume token, size, hash) + SaveChunks
+  verify SHA-256, write BannerlordMP_Join.sav,
+  disconnect, load it
+On the map
+  reconnect, Hello(resume token) ──────────────────► redeem token (single use, 10 min) → Welcome
+  take control of the hero; normal session from here
+```
+
+- **Passwords** (`Core/Security/PasswordProof`): PBKDF2 (100k iterations, 16-byte salt) gives a key; a
+  login sends HMAC-SHA256(key, nonce) over a fresh per-connection nonce, so a captured login can't be
+  replayed. A new hero's key is derived on the client; the server stores only salt and key.
+- **Slots** (`Core/Slots/SlotRegistry`) are stored per campaign in `Modules/BannerlordMP/Servers/<id>.slots`
+  on the server, never in the save. Offline players' heroes stay frozen where they logged off.
+- **Transports** (`Net/`): `NetTransport` (LiteNetLib UDP, which also answers LAN discovery broadcasts)
+  and `SteamTransport` (Steam Networking Sockets over Valve's relay). The server listens on both
+  through `CompositeTransport`. Steam lobbies (`Steam/SteamService`) only advertise the server and
+  carry the host's Steam id for the browser and invites.
+- **World transfer** (`Core/Transfer`): the server saves the live world, then streams it in 48 KB chunks
+  (paced, with backpressure on Steam) and checks a SHA-256 hash at the end.
+
 ## Authority model
 
 The host's campaign is the real world. Clients load the same save, take control of their own hero
@@ -69,17 +97,16 @@ keeps every party removal, in order.
 
 The order is chosen so that each step removes a limitation and makes the next one easier.
 
-1. **In-game validation of v0.1** with a dedicated host: host/join, time control, puppet movement,
-   battle freeze, result, catch-up.
+1. **In-game validation** with a dedicated host: menus, Steam and LAN join, slots and passwords,
+   world transfer, time control, puppet movement, battle freeze, result, catch-up.
 2. **World replication (the key step).** Clients stop running world AI and the host streams all of it:
    spawn and despawn parties by host command, settlement ownership, sieges, raids, wars and peace. This
    removes the drift between machines, which causes most of the remaining limitations.
-3. **Save transfer on join:** the server sends its save, and the client loads it automatically.
-4. **Interactions as host-validated commands:** trade, recruiting, quests, dialogue outcomes, and
+3. **Interactions as host-validated commands:** trade, recruiting, quests, dialogue outcomes, and
    clan/kingdom actions.
-5. **Separate clans per player**, and hero death and capture sync.
-6. **Joint battles** (several players in one battle) using the multiplayer mission stack.
-7. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),
+4. **Hero death and capture sync**, respawning, and a face editor for new heroes.
+5. **Joint battles** (several players in one battle) using the multiplayer mission stack.
+6. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),
    and TaleWorlds' headless dedicated server only ships the multiplayer modules. Loading the campaign
    modules into it might work or might hit a hard wall; until that's tried, the dedicated host is a
    normal game window.

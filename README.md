@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.1, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.2, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -32,27 +32,43 @@ hero and party; the host's game runs the world.
 
 ## Play
 
-1. **Host:** start or load a campaign. Give each friend a hero who leads a party: in the clan screen
-   (Parties tab), create a party led by a companion or clan member. Run `mp.heroes` in the console
-   (Alt + ~) to see the hero ids. **Save**, and send the save file to your friends
-   (`Documents/Mount and Blade II Bannerlord/Game Saves/`).
-2. **Host:** run `mp.host` (or `mp.host <port>`; the default is 7777/UDP, forward it for internet play).
-   For a dedicated host, run `mp.server` instead and leave that game window running. Every player then
-   joins it with `mp.join`, each with their own hero.
-3. **Each friend:** load that same save, then run `mp.join <host-ip> <hero_id>`. You take control of that
-   hero; your world catches up to the host's.
+Everything is in the main menu.
 
-| Command | What it does |
+**Host Co-op Campaign**
+1. Pick a server name, a password (optional), how many player heroes the server allows, and who can
+   find it: Steam friends, Steam invite only, Steam public, or LAN/direct IP only.
+2. Choose **Play on this PC** or **Dedicated server**. On a dedicated server nobody plays and the world
+   never pauses for battles.
+3. Pick a save, or start a new sandbox campaign. The server starts once the world is on the map. With
+   Steam, you're offered the Steam invite dialog.
+
+**Join Co-op Campaign**
+1. The server browser lists Steam friends' servers, public Steam servers and LAN servers, plus
+   **Direct connect** for an IP address. Accepting a Steam invite connects straight away.
+2. Enter the server password if it has one.
+3. Pick your hero and enter its password, or **Create a new hero**: name, culture, gender and a hero
+   password. A new hero gets their own clan, a party at a town of their culture, 20 troops and 5000 gold.
+4. Your game downloads the server's current world, loads it, and puts you in control of your hero.
+
+Nobody can play your hero without its password. The server never receives passwords in clear: it
+stores only a salted, stretched key and checks a one-time proof at each login. Slots are kept on the
+server in `Modules/BannerlordMP/Servers/`, not in the save, because the save is sent to every player.
+
+**Steam vs direct IP.** Over Steam, connections go through Valve's relay: encrypted, no port
+forwarding, and IP addresses stay hidden. Direct IP and LAN use UDP port 7777. Forward it for internet
+play. That traffic is not encrypted (passwords are still never sent).
+
+| Console command (Alt + ~) | What it does |
 |---|---|
-| `mp.host [port]` | Host the loaded campaign and play on it |
-| `mp.server [port]` | Run this game as a dedicated world host (nobody plays here) |
-| `mp.join <address> <hero_id> [port]` | Join a host, playing as `hero_id` |
-| `mp.heroes` | List the clan heroes players can take |
-| `mp.status` | Show the players, the shared speed and sync state |
+| `mp.host [port]` / `mp.server [port]` | Host the campaign that's already loaded (normal or dedicated), with settings from `config.ini` |
+| `mp.join <address[:port]>` | Join by address from the main menu |
+| `mp.invite` | Open the Steam invite dialog (host) |
+| `mp.slots` / `mp.removeslot <n>` | List player heroes / free a slot (the hero stays in the world as an AI lord) |
+| `mp.status` | Players, shared speed, sync state |
 | `mp.say <text>` | Chat |
 | `mp.leave` | Leave or stop hosting |
 
-Settings are in `Modules/BannerlordMP/config.ini` (player name, port, time mode, catch-up speed).
+Defaults for the host menu, the port and time control live in `Modules/BannerlordMP/config.ini`.
 The log is `Modules/BannerlordMP/BannerlordMP.log`.
 
 ## Build
@@ -83,10 +99,12 @@ the AI and economy, and those copies drift apart. Not synchronized yet:
   (regular troops are).
 - **Joint battles:** players cannot fight in the same battle or attack each other. Encounters with
   another player's party are blocked.
-- **Joining** requires every player to load the same save by hand. The save is not transferred
-  automatically.
+- **Steam features** (relay, lobbies, invites) depend on the game's own Steam integration delivering
+  Steam callbacks to mods. That's untested; LAN and direct IP don't depend on it.
+- **New heroes** use a random face from their culture's templates; there's no face editor yet. A
+  player whose hero is captured, or has lost their party, can't join until that's handled.
 - **The host in a battle** pauses the world for everyone, unless you use a dedicated host (`mp.server`).
   The dedicated host still needs a full game window. A headless server is not possible yet.
-- **Joining players take a companion party inside the host's clan.** They don't get a clan of their own.
+- **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works and the roadmap.

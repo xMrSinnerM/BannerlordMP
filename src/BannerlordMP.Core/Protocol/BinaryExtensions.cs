@@ -26,6 +26,24 @@ namespace BannerlordMP.Core.Protocol
             return items;
         }
 
+        public static void WriteByteArray(this BinaryWriter writer, byte[] bytes)
+        {
+            bytes = bytes ?? Array.Empty<byte>();
+            writer.Write(bytes.Length);
+            writer.Write(bytes);
+        }
+
+        public static byte[] ReadByteArray(this BinaryReader reader, int maxLength)
+        {
+            var length = reader.ReadInt32();
+            if (length < 0 || length > maxLength)
+                throw new InvalidDataException($"Byte array length {length} out of range.");
+            var bytes = reader.ReadBytes(length);
+            if (bytes.Length != length)
+                throw new EndOfStreamException();
+            return bytes;
+        }
+
         public static void WriteNullable(this BinaryWriter writer, string value) => writer.Write(value ?? string.Empty);
     }
 }

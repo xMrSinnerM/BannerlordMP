@@ -17,12 +17,50 @@ namespace BannerlordMP.Core.Tests
         [Fact]
         public void Hello()
         {
-            var m = RoundTrip(new HelloMessage { ModVersion = "0.1.0", PlayerName = "Ana", HeroId = "lord_1_1", CampaignId = "abc", LocalHours = 1234.5 });
+            var m = RoundTrip(new HelloMessage { ModVersion = "0.2.0", PlayerName = "Ana", ServerProof = new byte[] { 1, 2, 3 }, ResumeToken = "tok", CampaignId = "abc", LocalHours = 1234.5 });
             Assert.Equal(MessageCodec.ProtocolVersion, m.ProtocolVersion);
             Assert.Equal("Ana", m.PlayerName);
-            Assert.Equal("lord_1_1", m.HeroId);
+            Assert.Equal(new byte[] { 1, 2, 3 }, m.ServerProof);
+            Assert.Equal("tok", m.ResumeToken);
             Assert.Equal("abc", m.CampaignId);
             Assert.Equal(1234.5, m.LocalHours);
+        }
+
+        [Fact]
+        public void LoginAndSlotMessages()
+        {
+            var challenge = RoundTrip(new AuthChallengeMessage { ServerName = "Calradia", PasswordRequired = true, ServerSalt = new byte[] { 9 }, Nonce = new byte[] { 7, 7 } });
+            Assert.Equal("Calradia", challenge.ServerName);
+            Assert.True(challenge.PasswordRequired);
+            Assert.Equal(new byte[] { 7, 7 }, challenge.Nonce);
+
+            var list = RoundTrip(new SlotListMessage
+            {
+                MaxSlots = 4,
+                Slots = new List<SlotInfo> { new SlotInfo { SlotId = 1, HeroName = "Ana", CultureName = "Vlandia", InUse = true, Salt = new byte[] { 1 } } },
+                Cultures = new List<CultureChoice> { new CultureChoice("vlandia", "Vlandia") },
+            });
+            Assert.Equal(4, list.MaxSlots);
+            Assert.True(list.Slots[0].InUse);
+            Assert.Equal("vlandia", list.Cultures[0].Id);
+
+            var claim = RoundTrip(new ClaimSlotMessage { SlotId = 3, Proof = new byte[] { 5 } });
+            Assert.Equal(3, claim.SlotId);
+
+            var create = RoundTrip(new CreateHeroMessage { HeroName = "Bo", CultureId = "sturgia", IsFemale = true, Salt = new byte[] { 1 }, Key = new byte[] { 2 } });
+            Assert.Equal("sturgia", create.CultureId);
+            Assert.True(create.IsFemale);
+
+            var accepted = RoundTrip(new JoinAcceptedMessage { HeroId = "h", HeroName = "Bo", ResumeToken = "t", SaveSize = 123, SaveHash = new byte[] { 4 } });
+            Assert.Equal(123, accepted.SaveSize);
+
+            var chunk = RoundTrip(new SaveChunkMessage { Offset = 10, Data = new byte[] { 1, 2 } });
+            Assert.Equal(10, chunk.Offset);
+            Assert.Equal(new byte[] { 1, 2 }, chunk.Data);
+
+            var info = RoundTrip(new ServerInfoMessage { ServerName = "S", PasswordRequired = true, PlayersOnline = 2, UsedSlots = 3, MaxSlots = 6, Port = 7777 });
+            Assert.Equal(6, info.MaxSlots);
+            Assert.Equal(7777, info.Port);
         }
 
         [Fact]

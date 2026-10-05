@@ -24,7 +24,6 @@ namespace BannerlordMP.Session
         protected MpSession(MpConfig config)
         {
             Config = config;
-            Net = new NetTransport();
         }
 
         public static MpSession Current { get; private set; }
@@ -34,7 +33,8 @@ namespace BannerlordMP.Session
         public abstract bool IsHost { get; }
 
         protected MpConfig Config { get; }
-        protected NetTransport Net { get; }
+        /// <summary>Set by the subclass constructor before anything else uses it.</summary>
+        protected ITransport Net { get; set; }
         protected double RealSeconds => _clock.Elapsed.TotalSeconds;
         protected PartyLookup Parties { get; } = new PartyLookup();
 
@@ -66,7 +66,7 @@ namespace BannerlordMP.Session
         public void Tick(float dt)
         {
             _frame++;
-            Net.Poll();
+            Net?.Poll();
             if (_stopRequested)
             {
                 // Deferred so the transport is never torn down from inside its own event callbacks.
@@ -121,7 +121,7 @@ namespace BannerlordMP.Session
 
         public virtual void Dispose()
         {
-            Net.Dispose();
+            Net?.Dispose();
             GameBridge.RestoreDefaultSpeedUp();
         }
 

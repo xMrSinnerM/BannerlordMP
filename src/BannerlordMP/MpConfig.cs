@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using BannerlordMP.Core.Time;
+using BannerlordMP.Steam;
 
 namespace BannerlordMP
 {
@@ -14,6 +15,12 @@ namespace BannerlordMP
         public TimeArbitrationMode TimeArbitration = TimeArbitrationMode.LastRequestWins;
         public bool DetachDuringConversations = true;
         public bool DedicatedHost;
+        public string ServerName = "Calradia Co-op";
+        /// <summary>Empty for an open server.</summary>
+        public string ServerPassword = string.Empty;
+        /// <summary>How many player heroes the server allows.</summary>
+        public int MaxSlots = 4;
+        public LobbyVisibility SteamVisibility = LobbyVisibility.FriendsOnly;
         public float SnapshotRateHz = 4f;
         public float CatchUpMultiplier = 16f;
         public double CatchUpThresholdHours = 0.5;
@@ -39,6 +46,8 @@ namespace BannerlordMP
                 AheadThresholdHours = CatchUpThresholdHours,
             };
         }
+
+        public MpConfig Clone() => (MpConfig)MemberwiseClone();
 
         public static MpConfig Load()
         {
@@ -67,6 +76,14 @@ namespace BannerlordMP
                     config.TimeArbitration = m;
                 if (values.TryGetValue("DetachDuringConversations", out var detach) && bool.TryParse(detach, out var d))
                     config.DetachDuringConversations = d;
+                if (values.TryGetValue("ServerName", out var serverName) && serverName.Length > 0)
+                    config.ServerName = serverName;
+                if (values.TryGetValue("ServerPassword", out var serverPassword))
+                    config.ServerPassword = serverPassword;
+                if (values.TryGetValue("MaxSlots", out var slots) && int.TryParse(slots, out var ms) && ms > 0)
+                    config.MaxSlots = ms;
+                if (values.TryGetValue("SteamVisibility", out var vis) && Enum.TryParse(vis, true, out LobbyVisibility v))
+                    config.SteamVisibility = v;
                 if (values.TryGetValue("DedicatedHost", out var dedicated) && bool.TryParse(dedicated, out var dh))
                     config.DedicatedHost = dh;
                 if (values.TryGetValue("SnapshotRateHz", out var rate) && float.TryParse(rate, NumberStyles.Float, CultureInfo.InvariantCulture, out var r) && r > 0)

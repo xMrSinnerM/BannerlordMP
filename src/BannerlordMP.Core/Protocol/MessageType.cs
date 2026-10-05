@@ -15,5 +15,12 @@ namespace BannerlordMP.Core.Protocol
         BattleResult = 11,
         PartyDestroyed = 12,
         Chat = 13,
+        AuthChallenge = 14,
+        SlotList = 15,
+        ClaimSlot = 16,
+        CreateHero = 17,
+        JoinAccepted = 18,
+        SaveChunk = 19,
+        ServerInfo = 20,
     }
 }

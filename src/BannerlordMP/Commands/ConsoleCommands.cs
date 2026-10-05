@@ -1,27 +1,31 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using BannerlordMP.Game;
 using BannerlordMP.Session;
-using TaleWorlds.CampaignSystem;
+using BannerlordMP.Steam;
+using BannerlordMP.Ui;
 using TaleWorlds.Library;
 
 namespace BannerlordMP.Commands
 {
-    /// <summary>Developer console commands (open the console with Alt + ~). All are in the "mp" group, e.g. mp.host.</summary>
+    /// <summary>
+    /// Developer console commands (open the console with Alt + ~), all in the "mp" group, e.g. mp.host.
+    /// The main menu buttons cover the same ground; these are for hosting a campaign that is already loaded,
+    /// and for server admin.
+    /// </summary>
     internal static class ConsoleCommands
     {
         [CommandLineFunctionality.CommandLineArgumentFunction("host", "mp")]
         public static string Host(List<string> args) => StartHost(args, dedicated: null);
 
-        /// <summary>Runs this game as a dedicated world host: nobody plays here, every player joins with mp.join.</summary>
+        /// <summary>Runs this game as a dedicated world host: nobody plays here.</summary>
         [CommandLineFunctionality.CommandLineArgumentFunction("server", "mp")]
         public static string Server(List<string> args) => StartHost(args, dedicated: true);
 
         private static string StartHost(List<string> args, bool? dedicated)
         {
             if (!GameBridge.CampaignRunning)
-                return "Load a campaign first.";
+                return "Load a campaign first, or use \"Host Co-op Campaign\" in the main menu.";
             var config = MpConfig.Load();
             if (dedicated.HasValue)
                 config.DedicatedHost = dedicated.Value;
@@ -30,7 +34,8 @@ namespace BannerlordMP.Commands
             try
             {
                 MpSession.Start(new HostSession(config));
-                return $"{(config.DedicatedHost ? "Dedicated server" : "Hosting")} on port {config.Port}. Players join with: mp.join <your-ip> <hero_id>  (see mp.heroes)";
+                return $"{(config.DedicatedHost ? "Dedicated server" : "Hosting")} '{config.ServerName}' on port {config.Port}. " +
+                       "Settings come from config.ini. Players join from the main menu (Join Co-op Campaign).";
             }
             catch (Exception e)
             {
@@ -43,29 +48,36 @@ namespace BannerlordMP.Commands
         [CommandLineFunctionality.CommandLineArgumentFunction("join", "mp")]
         public static string Join(List<string> args)
         {
-            if (!GameBridge.CampaignRunning)
-                return "Load the same save as the host first.";
-            if (args.Count < 2)
-                return "Usage: mp.join <host-address> <hero_id> [port]";
+            if (!GameBridge.AtMainMenu)
+                return "Join from the main menu.";
+            if (args.Count < 1 || !JoinMenu.TryParseAddress(args[0], MpConfig.Load().Port, out var target))
+                return "Usage: mp.join <address[:port]>   (or use \"Join Co-op Campaign\" in the main menu)";
+            JoinMenu.ConnectTo(target);
+            return "Connecting to " + target + "...";
+        }
 
-            var config = MpConfig.Load();
-            if (args.Count > 2 && int.TryParse(args[2], out var port))
-                config.Port = port;
-            var hero = GameBridge.FindHero(args[1]);
-            if (hero == null)
-                return $"No hero with id '{args[1]}' in this save. Run mp.heroes on the host.";
+        [CommandLineFunctionality.CommandLineArgumentFunction("invite", "mp")]
+        public static string Invite(List<string> args)
+        {
+            if (!(MpSession.Current is HostSession))
+                return "Only the host can invite.";
+            return SteamService.OpenInviteDialog() ? "Steam invite dialog opened." : "No Steam lobby (Steam unavailable or SteamVisibility=Off).";
+        }
 
-            try
-            {
-                MpSession.Start(new ClientSession(config, args[0], config.Port, hero.StringId));
-                return $"Connecting to {args[0]}:{config.Port} as {hero.Name}...";
-            }
-            catch (Exception e)
-            {
-                MpSession.Stop();
-                Log.Error("Could not join", e);
-                return "Could not join: " + e.Message;
-            }
+        [CommandLineFunctionality.CommandLineArgumentFunction("slots", "mp")]
+        public static string Slots(List<string> args)
+        {
+            return MpSession.Current is HostSession host ? string.Join("\n", host.DescribeSlots()) : "Only the host has slots.";
+        }
+
+        [CommandLineFunctionality.CommandLineArgumentFunction("removeslot", "mp")]
+        public static string RemoveSlot(List<string> args)
+        {
+            if (!(MpSession.Current is HostSession host))
+                return "Only the host can remove slots.";
+            if (args.Count < 1 || !int.TryParse(args[0], out var slotId))
+                return "Usage: mp.removeslot <slot number>   (see mp.slots)";
+            return host.RemoveSlot(slotId);
         }
 
         [CommandLineFunctionality.CommandLineArgumentFunction("leave", "mp")]
@@ -92,21 +104,6 @@ namespace BannerlordMP.Commands
                 return "Not in a session.";
             session.SendChat(string.Join(" ", args));
             return string.Empty;
-        }
-
-        /// <summary>Lists heroes a friend can take control of: party leaders in the player's clan.</summary>
-        [CommandLineFunctionality.CommandLineArgumentFunction("heroes", "mp")]
-        public static string Heroes(List<string> args)
-        {
-            if (!GameBridge.CampaignRunning || Clan.PlayerClan == null)
-                return "Load a campaign first.";
-            var leaders = Clan.PlayerClan.Heroes
-                .Where(h => h.IsAlive && h != Hero.MainHero && h.PartyBelongedTo != null && h.PartyBelongedTo.LeaderHero == h)
-                .Select(h => $"  {h.StringId}  ({h.Name}, {h.PartyBelongedTo.MemberRoster.TotalManCount} troops)")
-                .ToList();
-            if (leaders.Count == 0)
-                return "No clan member leads a party. Create one from the clan screen (Parties tab) for each friend, then save.";
-            return "Heroes available to players:\n" + string.Join("\n", leaders);
         }
     }
 }

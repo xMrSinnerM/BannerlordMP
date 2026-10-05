@@ -7,8 +7,13 @@ using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.GameState;
 using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
+using TaleWorlds.Localization;
+using TaleWorlds.SaveSystem;
+using SandBox;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
 using TaleWorlds.ObjectSystem;
@@ -190,6 +195,20 @@ namespace BannerlordMP.Game
             main.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
         }
 
+        /// <summary>
+        /// Client, after taking control of its hero: the server keeps offline players' parties frozen, and the
+        /// downloaded save still has ours that way. Make it a normal, attackable, controllable party again.
+        /// </summary>
+        public static void ReleaseOwnParty()
+        {
+            var main = MobileParty.MainParty;
+            if (main == null)
+                return;
+            main.IgnoreByOtherPartiesTill(CampaignTime.Now);
+            main.Ai.EnableAi();
+            main.SetMoveModeHold();
+        }
+
         public static void UnparkMainParty()
         {
             MobileParty.MainParty?.IgnoreByOtherPartiesTill(CampaignTime.Now);
@@ -261,6 +280,125 @@ namespace BannerlordMP.Game
                 roster.AddToCounts(character, troop.Count, false, troop.Wounded, 0, true, -1);
             }
         }
+
+        public static List<CultureChoice> PlayableCultures()
+        {
+            return MBObjectManager.Instance.GetObjectTypeList<CultureObject>()
+                .Where(c => c.IsMainCulture && c.LordTemplates != null && c.LordTemplates.Count > 0)
+                .Select(c => new CultureChoice(c.StringId, c.Name.ToString()))
+                .OrderBy(c => c.Name)
+                .ToList();
+        }
+
+        public static string CultureName(Hero hero) => hero?.Culture?.Name?.ToString() ?? string.Empty;
+
+        /// <summary>
+        /// Creates a new lord for a player: their own independent clan, a party at a town of their culture, starting
+        /// troops and gold. Mirrors what a fresh sandbox start gives, without the character creation screens.
+        /// </summary>
+        public static Hero CreatePlayerHero(string name, string cultureId, bool isFemale)
+        {
+            var culture = MBObjectManager.Instance.GetObject<CultureObject>(cultureId);
+            if (culture == null || !culture.IsMainCulture)
+                throw new ArgumentException("Unknown culture " + cultureId);
+
+            var templates = culture.LordTemplates.Where(t => t.IsFemale == isFemale).ToList();
+            if (templates.Count == 0)
+                templates = culture.LordTemplates.ToList();
+            var template = templates[MBRandom.RandomInt(templates.Count)];
+
+            var towns = Town.AllTowns.Where(t => t.Culture == culture).ToList();
+            if (towns.Count == 0)
+                towns = Town.AllTowns.ToList();
+            var settlement = towns[MBRandom.RandomInt(towns.Count)].Settlement;
+
+            var hero = HeroCreator.CreateSpecialHero(template, settlement, null, null, 25);
+            var heroName = new TextObject(name);
+            hero.SetName(heroName, heroName);
+            hero.ChangeState(Hero.CharacterStates.Active);
+
+            var clanName = new TextObject(name + "'s Clan");
+            Clan clan;
+            try
+            {
+                clan = Clan.CreateCompanionToLordClan(hero, settlement, clanName, BannerManager.Instance.GetRandomBannerIconId(new MBFastRandom()));
+            }
+            catch (Exception e)
+            {
+                Log.Error("CreateCompanionToLordClan failed, building the clan by hand", e);
+                clan = Clan.CreateClan("bmp_clan_" + hero.StringId);
+                clan.ChangeClanName(clanName, clanName);
+                clan.Culture = culture;
+                clan.Banner = Banner.CreateRandomClanBanner(MBRandom.RandomInt(int.MaxValue));
+                clan.SetInitialHomeSettlement(settlement);
+                hero.Clan = clan;
+                clan.SetLeader(hero);
+                clan.IsNoble = true;
+            }
+
+            var party = hero.PartyBelongedTo;
+            if (party == null || party.LeaderHero != hero)
+                party = LordPartyComponent.CreateLordParty("bmp_party_" + hero.StringId, hero, settlement.GatePosition, 3f, settlement, hero);
+
+            if (culture.BasicTroop != null)
+                party.MemberRoster.AddToCounts(culture.BasicTroop, 20, false, 0, 0, true, -1);
+            hero.Gold = 5000;
+            Log.Info($"Created player hero {hero.StringId} ({name}, {culture.StringId}) in clan {clan?.StringId} at {settlement.StringId}");
+            return hero;
+        }
+
+        /// <summary>Name of the save the server writes for joining players. It shows up in the server's own save list.</summary>
+        public const string ServerSaveName = "BannerlordMP_Server";
+
+        public static void SaveWorld(string saveName) => Campaign.Current.SaveHandler.SaveAs(saveName);
+
+        public static byte[] ReadSaveFile(string saveName)
+        {
+            foreach (var path in SaveFileCandidates(saveName))
+            {
+                if (Common.PlatformFileHelper.FileExists(path))
+                    return Common.PlatformFileHelper.GetFileContent(path);
+            }
+            throw new System.IO.FileNotFoundException("Save not found: " + saveName);
+        }
+
+        public static void WriteSaveFile(string saveName, byte[] data)
+        {
+            var path = SaveFileCandidates(saveName).First();
+            var result = Common.PlatformFileHelper.SaveFile(path, data);
+            if (result != SaveResult.Success)
+                throw new System.IO.IOException($"Could not write {saveName}: {result} {Common.PlatformFileHelper.GetError()}");
+        }
+
+        /// <summary>Loads a save from the main menu, going through the game's usual module-compatibility checks.</summary>
+        public static bool LoadSave(string saveName, Action onCancel)
+        {
+            var info = MBSaveLoad.GetSaveFileWithName(saveName);
+            if (info == null)
+                return false;
+            SandBoxSaveHelper.TryLoadSave(info, result => MBGameManager.StartNewGame(new SandBoxGameManager(result)), onCancel);
+            return true;
+        }
+
+        public static List<SaveGameFileInfo> ListSaves()
+        {
+            return (MBSaveLoad.GetSaveFiles(null) ?? new SaveGameFileInfo[0])
+                .Where(s => !s.IsCorrupted && s.Name != ServerSaveName && !s.Name.StartsWith("BannerlordMP_Join"))
+                .ToList();
+        }
+
+        private static IEnumerable<PlatformFilePath> SaveFileCandidates(string saveName)
+        {
+            var extension = SaveManager.SaveFileExtension ?? string.Empty;
+            if (extension.Length > 0 && !extension.StartsWith("."))
+                extension = "." + extension;
+            yield return FileDriver.GetSaveFilePath(saveName + extension);
+            yield return FileDriver.GetSaveFilePath(saveName);
+        }
+
+        public static bool AtMainMenu => GameStateManager.Current?.ActiveState is InitialState;
+
+        public static bool OnCampaignMap => Campaign.Current != null && GameStateManager.Current?.ActiveState is MapState;
 
         public static void DestroyFromHost(MobileParty party)
         {

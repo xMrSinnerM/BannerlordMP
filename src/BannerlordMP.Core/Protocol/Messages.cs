@@ -4,16 +4,20 @@ using BannerlordMP.Core.Time;
 
 namespace BannerlordMP.Core.Protocol
 {
-    /// <summary>Client → host: first message after connecting.</summary>
+    /// <summary>
+    /// Client → host, in answer to <see cref="AuthChallengeMessage"/>. Without a resume token the client is
+    /// browsing slots from the main menu; with one it has loaded the world and is entering the game.
+    /// </summary>
     public sealed class HelloMessage : INetMessage
     {
         public MessageType Type => MessageType.Hello;
         public ushort ProtocolVersion = MessageCodec.ProtocolVersion;
         public string ModVersion = string.Empty;
         public string PlayerName = string.Empty;
-        /// <summary>StringId of the hero this player wants to control.</summary>
-        public string HeroId = string.Empty;
-        /// <summary>Campaign.UniqueGameId of the loaded save, to make sure both sides loaded the same campaign.</summary>
+        /// <summary>HMAC of the challenge nonce with the server password key; empty if the server has no password.</summary>
+        public byte[] ServerProof = new byte[0];
+        public string ResumeToken = string.Empty;
+        /// <summary>Campaign.UniqueGameId of the loaded world (resume only).</summary>
         public string CampaignId = string.Empty;
         public double LocalHours;
 
@@ -22,7 +26,8 @@ namespace BannerlordMP.Core.Protocol
             w.Write(ProtocolVersion);
             w.WriteNullable(ModVersion);
             w.WriteNullable(PlayerName);
-            w.WriteNullable(HeroId);
+            w.WriteByteArray(ServerProof);
+            w.WriteNullable(ResumeToken);
             w.WriteNullable(CampaignId);
             w.Write(LocalHours);
         }
@@ -32,9 +37,242 @@ namespace BannerlordMP.Core.Protocol
             ProtocolVersion = r.ReadUInt16();
             ModVersion = r.ReadString();
             PlayerName = r.ReadString();
-            HeroId = r.ReadString();
+            ServerProof = r.ReadByteArray(64);
+            ResumeToken = r.ReadString();
             CampaignId = r.ReadString();
             LocalHours = r.ReadDouble();
+        }
+    }
+
+    /// <summary>Host → client, right after connecting.</summary>
+    public sealed class AuthChallengeMessage : INetMessage
+    {
+        public MessageType Type => MessageType.AuthChallenge;
+        public ushort ProtocolVersion = MessageCodec.ProtocolVersion;
+        public string ServerName = string.Empty;
+        public bool PasswordRequired;
+        public byte[] ServerSalt = new byte[0];
+        /// <summary>Single-use random value; every proof in this connection is computed over it.</summary>
+        public byte[] Nonce = new byte[0];
+
+        public void Write(BinaryWriter w)
+        {
+            w.Write(ProtocolVersion);
+            w.WriteNullable(ServerName);
+            w.Write(PasswordRequired);
+            w.WriteByteArray(ServerSalt);
+            w.WriteByteArray(Nonce);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            ProtocolVersion = r.ReadUInt16();
+            ServerName = r.ReadString();
+            PasswordRequired = r.ReadBoolean();
+            ServerSalt = r.ReadByteArray(64);
+            Nonce = r.ReadByteArray(64);
+        }
+    }
+
+    public sealed class SlotInfo
+    {
+        public int SlotId;
+        public string HeroName = string.Empty;
+        public string CultureName = string.Empty;
+        /// <summary>True if the owner is playing right now.</summary>
+        public bool InUse;
+        public byte[] Salt = new byte[0];
+
+        internal void Write(BinaryWriter w)
+        {
+            w.Write(SlotId);
+            w.WriteNullable(HeroName);
+            w.WriteNullable(CultureName);
+            w.Write(InUse);
+            w.WriteByteArray(Salt);
+        }
+
+        internal static SlotInfo Read(BinaryReader r)
+        {
+            return new SlotInfo
+            {
+                SlotId = r.ReadInt32(),
+                HeroName = r.ReadString(),
+                CultureName = r.ReadString(),
+                InUse = r.ReadBoolean(),
+                Salt = r.ReadByteArray(64),
+            };
+        }
+    }
+
+    public struct CultureChoice
+    {
+        public string Id;
+        public string Name;
+
+        public CultureChoice(string id, string name)
+        {
+            Id = id;
+            Name = name;
+        }
+    }
+
+    /// <summary>Host → client: the player heroes on this server, and what a new hero can be.</summary>
+    public sealed class SlotListMessage : INetMessage
+    {
+        public MessageType Type => MessageType.SlotList;
+        public int MaxSlots;
+        public List<SlotInfo> Slots = new List<SlotInfo>();
+        public List<CultureChoice> Cultures = new List<CultureChoice>();
+
+        public void Write(BinaryWriter w)
+        {
+            w.Write(MaxSlots);
+            w.WriteList(Slots, (bw, s) => s.Write(bw));
+            w.WriteList(Cultures, (bw, c) =>
+            {
+                bw.WriteNullable(c.Id);
+                bw.WriteNullable(c.Name);
+            });
+        }
+
+        public void Read(BinaryReader r)
+        {
+            MaxSlots = r.ReadInt32();
+            Slots = r.ReadList(SlotInfo.Read);
+            Cultures = r.ReadList(br => new CultureChoice(br.ReadString(), br.ReadString()));
+        }
+    }
+
+    /// <summary>Client → host: play an existing hero, proving its password.</summary>
+    public sealed class ClaimSlotMessage : INetMessage
+    {
+        public MessageType Type => MessageType.ClaimSlot;
+        public int SlotId;
+        public byte[] Proof = new byte[0];
+
+        public void Write(BinaryWriter w)
+        {
+            w.Write(SlotId);
+            w.WriteByteArray(Proof);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            SlotId = r.ReadInt32();
+            Proof = r.ReadByteArray(64);
+        }
+    }
+
+    /// <summary>Client → host: create a new hero in a free slot, protected by a password (sent as a derived key, never in clear).</summary>
+    public sealed class CreateHeroMessage : INetMessage
+    {
+        public MessageType Type => MessageType.CreateHero;
+        public string HeroName = string.Empty;
+        public string CultureId = string.Empty;
+        public bool IsFemale;
+        public byte[] Salt = new byte[0];
+        public byte[] Key = new byte[0];
+
+        public void Write(BinaryWriter w)
+        {
+            w.WriteNullable(HeroName);
+            w.WriteNullable(CultureId);
+            w.Write(IsFemale);
+            w.WriteByteArray(Salt);
+            w.WriteByteArray(Key);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            HeroName = r.ReadString();
+            CultureId = r.ReadString();
+            IsFemale = r.ReadBoolean();
+            Salt = r.ReadByteArray(64);
+            Key = r.ReadByteArray(64);
+        }
+    }
+
+    /// <summary>Host → client: slot granted. The world follows as <see cref="SaveChunkMessage"/>s.</summary>
+    public sealed class JoinAcceptedMessage : INetMessage
+    {
+        public MessageType Type => MessageType.JoinAccepted;
+        public string HeroId = string.Empty;
+        public string HeroName = string.Empty;
+        public string ResumeToken = string.Empty;
+        public long SaveSize;
+        public byte[] SaveHash = new byte[0];
+
+        public void Write(BinaryWriter w)
+        {
+            w.WriteNullable(HeroId);
+            w.WriteNullable(HeroName);
+            w.WriteNullable(ResumeToken);
+            w.Write(SaveSize);
+            w.WriteByteArray(SaveHash);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            HeroId = r.ReadString();
+            HeroName = r.ReadString();
+            ResumeToken = r.ReadString();
+            SaveSize = r.ReadInt64();
+            SaveHash = r.ReadByteArray(64);
+        }
+    }
+
+    public sealed class SaveChunkMessage : INetMessage
+    {
+        public MessageType Type => MessageType.SaveChunk;
+        public long Offset;
+        public byte[] Data = new byte[0];
+
+        public void Write(BinaryWriter w)
+        {
+            w.Write(Offset);
+            w.WriteByteArray(Data);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            Offset = r.ReadInt64();
+            Data = r.ReadByteArray(1024 * 1024);
+        }
+    }
+
+    /// <summary>Host → anyone on the LAN who asked: what this server is. Sent unconnected, in reply to a discovery broadcast.</summary>
+    public sealed class ServerInfoMessage : INetMessage
+    {
+        public MessageType Type => MessageType.ServerInfo;
+        public ushort ProtocolVersion = MessageCodec.ProtocolVersion;
+        public string ServerName = string.Empty;
+        public bool PasswordRequired;
+        public int PlayersOnline;
+        public int UsedSlots;
+        public int MaxSlots;
+        public int Port;
+
+        public void Write(BinaryWriter w)
+        {
+            w.Write(ProtocolVersion);
+            w.WriteNullable(ServerName);
+            w.Write(PasswordRequired);
+            w.Write(PlayersOnline);
+            w.Write(UsedSlots);
+            w.Write(MaxSlots);
+            w.Write(Port);
+        }
+
+        public void Read(BinaryReader r)
+        {
+            ProtocolVersion = r.ReadUInt16();
+            ServerName = r.ReadString();
+            PasswordRequired = r.ReadBoolean();
+            PlayersOnline = r.ReadInt32();
+            UsedSlots = r.ReadInt32();
+            MaxSlots = r.ReadInt32();
+            Port = r.ReadInt32();
         }
     }
 

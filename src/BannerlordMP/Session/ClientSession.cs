@@ -4,6 +4,8 @@ using BannerlordMP.Core.Protocol;
 using BannerlordMP.Core.Sync;
 using BannerlordMP.Core.Time;
 using BannerlordMP.Game;
+using BannerlordMP.Net;
+using BannerlordMP.Steam;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
@@ -26,6 +28,7 @@ namespace BannerlordMP.Session
         private const float PartyStateInterval = 0.1f;
 
         private readonly string _heroId;
+        private readonly string _resumeToken;
         private readonly TimeSyncController _sync;
         private readonly CatchUpBuffer _buffer = new CatchUpBuffer();
         private readonly HashSet<string> _frozenRemoteParties = new HashSet<string>();
@@ -39,20 +42,22 @@ namespace BannerlordMP.Session
         private SyncAction _lastAction = SyncAction.FollowHost;
         private float _partyStateTimer;
 
-        public ClientSession(MpConfig config, string address, int port, string heroId) : base(config)
+        /// <param name="resumeToken">One-time token from the join that downloaded this world.</param>
+        /// <param name="heroId">The player's hero in that world.</param>
+        public ClientSession(MpConfig config, ConnectTarget target, string resumeToken, string heroId) : base(config)
         {
             _heroId = heroId;
+            _resumeToken = resumeToken;
             _sync = new TimeSyncController(config.ToSyncSettings());
 
-            Net.PeerConnected += OnConnected;
+            Net = target.CreateClientTransport();
             Net.PeerDisconnected += (peer, reason) =>
             {
                 Log.Notify($"Disconnected from host ({reason}).");
                 RequestStop();
             };
             Net.MessageReceived += OnMessage;
-            Net.Connect(address, port);
-            Log.Notify($"Connecting to {address}:{port}...");
+            Log.Notify($"Entering the world on {target}...");
         }
 
         public override bool IsHost => false;
@@ -149,28 +154,35 @@ namespace BannerlordMP.Session
             base.Dispose();
         }
 
-        private void OnConnected(int peer)
-        {
-            Net.SendToAll(new HelloMessage
-            {
-                ModVersion = typeof(ClientSession).Assembly.GetName().Version.ToString(),
-                PlayerName = Config.PlayerName,
-                HeroId = _heroId,
-                CampaignId = GameBridge.CampaignId,
-                LocalHours = GameBridge.NowHours,
-            });
-        }
-
         private void OnMessage(int peer, INetMessage message)
         {
             switch (message)
             {
+                case AuthChallengeMessage _:
+                    // We already passed the server password when downloading the world; the token stands in for it.
+                    Net.SendToAll(new HelloMessage
+                    {
+                        ModVersion = typeof(ClientSession).Assembly.GetName().Version.ToString(),
+                        PlayerName = SteamService.PersonaName ?? Config.PlayerName,
+                        ResumeToken = _resumeToken,
+                        CampaignId = GameBridge.CampaignId,
+                        LocalHours = GameBridge.NowHours,
+                    });
+                    break;
+
                 case WelcomeMessage welcome:
                     _playerId = welcome.PlayerId;
                     _welcomed = true;
                     var hero = GameBridge.FindHero(_heroId);
+                    if (hero == null)
+                    {
+                        Log.Notify("Your hero is missing from the downloaded world.");
+                        RequestStop();
+                        break;
+                    }
                     GameBridge.TakeControlOf(hero);
-                    Log.Notify($"Joined! You are now {hero.Name}.");
+                    GameBridge.ReleaseOwnParty();
+                    Log.Notify($"Joined! You are {hero.Name}.");
                     break;
 
                 case RejectMessage reject:
@@ -284,11 +296,9 @@ namespace BannerlordMP.Session
 
             // Other players' parties are puppets on this machine: moved by snapshots, never by local AI.
             var remote = new HashSet<string>(list.Players.Where(p => p.Id != _playerId).Select(p => p.PartyId));
+            // Players who log off stay frozen too: their hero waits where they left it, as it does on the host.
             foreach (var id in remote.Where(id => !_frozenRemoteParties.Contains(id)))
                 GameBridge.Freeze(GameBridge.FindParty(id));
-            foreach (var id in _frozenRemoteParties.Where(id => !remote.Contains(id)).ToList())
-                GameBridge.Unfreeze(GameBridge.FindParty(id), enableAi: true);
-            _frozenRemoteParties.Clear();
             _frozenRemoteParties.UnionWith(remote);
         }
 
