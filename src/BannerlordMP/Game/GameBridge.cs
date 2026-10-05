@@ -80,9 +80,14 @@ namespace BannerlordMP.Game
         }
 
         /// <param name="speedUpMultiplier">Fast-forward multiplier, or 0 for the game's default.</param>
-        /// <param name="unstoppable">Use the "unstoppable" modes the game uses for waiting, so nothing interrupts a catch-up.</param>
-        public static void SetLocalTime(TimeSpeed speed, float speedUpMultiplier, bool unstoppable)
+        /// <remarks>
+        /// Always uses the game's "unstoppable" modes. The normal (stoppable) ones stop the clock whenever the
+        /// local player's party is idle, which is single-player behaviour: in a shared world one idle party
+        /// (or a dedicated server's parked one) must not pause everyone.
+        /// </remarks>
+        public static void SetLocalTime(TimeSpeed speed, float speedUpMultiplier)
         {
+            const bool unstoppable = true;
             var campaign = Campaign.Current;
             if (campaign == null)
                 return;
@@ -212,6 +217,14 @@ namespace BannerlordMP.Game
             main.IgnoreByOtherPartiesTill(CampaignTime.Now);
             main.Ai.EnableAi();
             main.SetMoveModeHold();
+        }
+
+        /// <summary>Dedicated host: undo any move order the game gave the parked party (map clicks, menus).</summary>
+        public static void KeepMainPartyParked()
+        {
+            var main = MobileParty.MainParty;
+            if (main != null && main.CurrentSettlement == null && main.DefaultBehavior != AiBehavior.Hold)
+                main.SetMoveModeHold();
         }
 
         public static void UnparkMainParty()

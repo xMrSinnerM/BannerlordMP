@@ -92,7 +92,7 @@ namespace BannerlordMP.Session
                 return; // In a mission: the local campaign is not ticking, the world goes on without us.
 
             var decision = _sync.Update(GameBridge.NowHours, RealSeconds);
-            GameBridge.SetLocalTime(decision.Speed, decision.SpeedUpMultiplier, unstoppable: decision.Action == SyncAction.CatchUp);
+            GameBridge.SetLocalTime(decision.Speed, decision.SpeedUpMultiplier);
             ReportSyncChange(decision);
 
             ReplayBuffered(GameBridge.NowHours);

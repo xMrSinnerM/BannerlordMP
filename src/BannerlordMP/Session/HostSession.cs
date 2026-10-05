@@ -107,6 +107,8 @@ namespace BannerlordMP.Session
 
         public SlotRegistry Slots => _slots;
 
+        public bool IsDedicated => Config.DedicatedHost;
+
         protected override TimeSpeed CurrentSharedSpeed() => _arbiter.Effective;
 
         protected override void OnSpeedRequested(TimeSpeed speed)
@@ -137,7 +139,9 @@ namespace BannerlordMP.Session
             if (!_saving && _peers.Values.Any(p => p.WaitingForSave))
                 StartSave();
 
-            GameBridge.SetLocalTime(_arbiter.Effective, 0f, unstoppable: false);
+            GameBridge.SetLocalTime(_arbiter.Effective, 0f);
+            if (Config.DedicatedHost)
+                GameBridge.KeepMainPartyParked();
             ExpireStaleBattles();
             TickWorld(dt);
 
