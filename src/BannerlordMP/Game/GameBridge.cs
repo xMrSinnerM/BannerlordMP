@@ -180,6 +180,21 @@ namespace BannerlordMP.Game
             party.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
         }
 
+        /// <summary>Dedicated host: keep the server's own party still and out of every encounter.</summary>
+        public static void ParkMainParty()
+        {
+            var main = MobileParty.MainParty;
+            if (main == null)
+                return;
+            main.SetMoveModeHold();
+            main.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
+        }
+
+        public static void UnparkMainParty()
+        {
+            MobileParty.MainParty?.IgnoreByOtherPartiesTill(CampaignTime.Now);
+        }
+
         public static void Unfreeze(MobileParty party, bool enableAi)
         {
             if (party == null || party == MobileParty.MainParty)

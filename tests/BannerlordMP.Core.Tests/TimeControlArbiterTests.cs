@@ -115,5 +115,31 @@ namespace BannerlordMP.Core.Tests
             Assert.True(arbiter.RemovePlayer(1));
             Assert.Equal(TimeSpeed.Play, arbiter.Effective);
         }
+    
+        [Fact]
+        public void DedicatedHost_WaitsForPlayers()
+        {
+            var arbiter = new TimeControlArbiter(Host, TimeArbitrationMode.LastRequestWins, false, hostIsPlayer: false);
+            arbiter.Request(Host, TimeSpeed.Play);
+            Assert.Equal(TimeSpeed.Paused, arbiter.Effective);
+
+            arbiter.AddPlayer(1);
+            Assert.Equal(TimeSpeed.Play, arbiter.Effective);
+
+            arbiter.RemovePlayer(1);
+            Assert.Equal(TimeSpeed.Paused, arbiter.Effective);
+        }
+
+        [Fact]
+        public void DedicatedHost_HasNoVoteInConsensus()
+        {
+            var arbiter = new TimeControlArbiter(Host, TimeArbitrationMode.Consensus, false, hostIsPlayer: false);
+            arbiter.AddPlayer(1);
+            arbiter.AddPlayer(2);
+            arbiter.Request(1, TimeSpeed.FastForward);
+            arbiter.Request(2, TimeSpeed.Play);
+            // The host never requested anything (Paused) but is not counted.
+            Assert.Equal(TimeSpeed.Play, arbiter.Effective);
+        }
     }
 }

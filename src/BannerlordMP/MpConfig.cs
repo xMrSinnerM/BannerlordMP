@@ -13,6 +13,7 @@ namespace BannerlordMP
         public int Port = 7777;
         public TimeArbitrationMode TimeArbitration = TimeArbitrationMode.LastRequestWins;
         public bool DetachDuringConversations = true;
+        public bool DedicatedHost;
         public float SnapshotRateHz = 4f;
         public float CatchUpMultiplier = 16f;
         public double CatchUpThresholdHours = 0.5;
@@ -66,6 +67,8 @@ namespace BannerlordMP
                     config.TimeArbitration = m;
                 if (values.TryGetValue("DetachDuringConversations", out var detach) && bool.TryParse(detach, out var d))
                     config.DetachDuringConversations = d;
+                if (values.TryGetValue("DedicatedHost", out var dedicated) && bool.TryParse(dedicated, out var dh))
+                    config.DedicatedHost = dh;
                 if (values.TryGetValue("SnapshotRateHz", out var rate) && float.TryParse(rate, NumberStyles.Float, CultureInfo.InvariantCulture, out var r) && r > 0)
                     config.SnapshotRateHz = r;
                 if (values.TryGetValue("CatchUpMultiplier", out var mult) && float.TryParse(mult, NumberStyles.Float, CultureInfo.InvariantCulture, out var cm) && cm >= 1)

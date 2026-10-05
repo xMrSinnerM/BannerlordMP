@@ -12,17 +12,25 @@ namespace BannerlordMP.Commands
     internal static class ConsoleCommands
     {
         [CommandLineFunctionality.CommandLineArgumentFunction("host", "mp")]
-        public static string Host(List<string> args)
+        public static string Host(List<string> args) => StartHost(args, dedicated: null);
+
+        /// <summary>Runs this game as a dedicated world host: nobody plays here, every player joins with mp.join.</summary>
+        [CommandLineFunctionality.CommandLineArgumentFunction("server", "mp")]
+        public static string Server(List<string> args) => StartHost(args, dedicated: true);
+
+        private static string StartHost(List<string> args, bool? dedicated)
         {
             if (!GameBridge.CampaignRunning)
                 return "Load a campaign first.";
             var config = MpConfig.Load();
+            if (dedicated.HasValue)
+                config.DedicatedHost = dedicated.Value;
             if (args.Count > 0 && int.TryParse(args[0], out var port))
                 config.Port = port;
             try
             {
                 MpSession.Start(new HostSession(config));
-                return $"Hosting on port {config.Port}. Friends join with: mp.join <your-ip> <hero_id>  (see mp.heroes)";
+                return $"{(config.DedicatedHost ? "Dedicated server" : "Hosting")} on port {config.Port}. Players join with: mp.join <your-ip> <hero_id>  (see mp.heroes)";
             }
             catch (Exception e)
             {

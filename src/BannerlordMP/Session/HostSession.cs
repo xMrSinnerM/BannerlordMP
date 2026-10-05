@@ -39,11 +39,11 @@ namespace BannerlordMP.Session
 
         public HostSession(MpConfig config) : base(config)
         {
-            _arbiter = new TimeControlArbiter(HostPlayerId, config.TimeArbitration, config.DetachDuringConversations);
+            _arbiter = new TimeControlArbiter(HostPlayerId, config.TimeArbitration, config.DetachDuringConversations, hostIsPlayer: !config.DedicatedHost);
             Players[HostPlayerId] = new PlayerInfo
             {
                 Id = HostPlayerId,
-                Name = config.PlayerName,
+                Name = config.DedicatedHost ? "Server" : config.PlayerName,
                 HeroId = Hero.MainHero.StringId,
                 PartyId = MobileParty.MainParty.StringId,
                 Activity = GameBridge.DetectActivity(),
@@ -53,7 +53,9 @@ namespace BannerlordMP.Session
             Net.PeerDisconnected += OnPeerDisconnected;
             Net.MessageReceived += OnMessage;
             Net.StartServer(config.Port);
-            Log.Notify($"Hosting on UDP port {config.Port}. Time control: {config.TimeArbitration}.");
+            if (config.DedicatedHost)
+                GameBridge.ParkMainParty();
+            Log.Notify($"{(config.DedicatedHost ? "Dedicated server" : "Hosting")} on UDP port {config.Port}. Time control: {config.TimeArbitration}.");
         }
 
         public override bool IsHost => true;
@@ -103,6 +105,9 @@ namespace BannerlordMP.Session
 
         public override bool AllowEncounter(MobileParty attacker, MobileParty defender)
         {
+            // A dedicated server's own party never fights: any battle on this machine would stop the world.
+            if (Config.DedicatedHost && (attacker == MobileParty.MainParty || defender == MobileParty.MainParty))
+                return false;
             // Encounters involving other players are decided on their machines; frozen parties are mid-battle elsewhere.
             return !IsRemotePlayerParty(attacker) && !IsRemotePlayerParty(defender)
                 && !IsBattleFrozen(attacker) && !IsBattleFrozen(defender);
@@ -129,7 +134,7 @@ namespace BannerlordMP.Session
 
         public override IEnumerable<string> Describe()
         {
-            yield return $"Hosting on port {Config.Port}, time {_arbiter.Effective} ({Config.TimeArbitration}), world at {GameBridge.NowHours:0.00}h";
+            yield return $"{(Config.DedicatedHost ? "Dedicated server" : "Hosting")} on port {Config.Port}, time {_arbiter.Effective} ({Config.TimeArbitration}), world at {GameBridge.NowHours:0.00}h";
             foreach (var p in Players.Values.OrderBy(p => p.Id))
                 yield return $"  #{p.Id} {p.Name} hero={p.HeroId} party={p.PartyId} {p.Activity} wants={p.RequestedSpeed}";
         }
@@ -140,6 +145,8 @@ namespace BannerlordMP.Session
                 GameBridge.Unfreeze(GameBridge.FindParty(player.PartyId), enableAi: true);
             foreach (var id in _battleFrozen)
                 GameBridge.Unfreeze(GameBridge.FindParty(id), enableAi: true);
+            if (Config.DedicatedHost)
+                GameBridge.UnparkMainParty();
             base.Dispose();
         }
 

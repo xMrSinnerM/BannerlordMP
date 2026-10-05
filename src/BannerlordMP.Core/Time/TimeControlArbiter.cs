@@ -24,9 +24,14 @@ namespace BannerlordMP.Core.Time
         private readonly Dictionary<int, PlayerTimeState> _players = new Dictionary<int, PlayerTimeState>();
         private TimeSpeed _lastRequest = TimeSpeed.Paused;
 
-        public TimeControlArbiter(int hostPlayerId, TimeArbitrationMode mode, bool detachDuringConversations)
+        /// <param name="hostIsPlayer">
+        /// False for a dedicated host: the host machine only runs the world, so it has no vote in consensus mode
+        /// and the world waits until at least one player is connected.
+        /// </param>
+        public TimeControlArbiter(int hostPlayerId, TimeArbitrationMode mode, bool detachDuringConversations, bool hostIsPlayer = true)
         {
             HostPlayerId = hostPlayerId;
+            HostIsPlayer = hostIsPlayer;
             Mode = mode;
             DetachDuringConversations = detachDuringConversations;
             _players[hostPlayerId] = new PlayerTimeState();
@@ -34,6 +39,7 @@ namespace BannerlordMP.Core.Time
         }
 
         public int HostPlayerId { get; }
+        public bool HostIsPlayer { get; }
         public TimeArbitrationMode Mode { get; }
         public bool DetachDuringConversations { get; }
         public TimeSpeed Effective { get; private set; }
@@ -116,10 +122,16 @@ namespace BannerlordMP.Core.Time
             if (HostDetached)
                 return TimeSpeed.Paused;
 
+            if (!HostIsPlayer && _players.Count == 1)
+                return TimeSpeed.Paused; // Dedicated host with nobody connected.
+
             if (Mode == TimeArbitrationMode.LastRequestWins)
                 return _lastRequest;
 
-            var attached = _players.Values.Where(p => !p.Activity.IsDetached(DetachDuringConversations)).ToList();
+            var attached = _players
+                .Where(p => (HostIsPlayer || p.Key != HostPlayerId) && !p.Value.Activity.IsDetached(DetachDuringConversations))
+                .Select(p => p.Value)
+                .ToList();
             if (attached.Count == 0)
                 return TimeSpeed.Paused;
             return attached.Min(p => p.Requested);

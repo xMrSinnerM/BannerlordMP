@@ -39,6 +39,9 @@ Other players' parties are puppets on every machine. Their AI is disabled and ot
   - Menus and management screens are **not** detached; time keeps flowing there, as it does while
     waiting in a town in single player.
   - If the **host** is detached, the effective speed is Paused, because nothing simulates the world.
+  - **Dedicated host** (`mp.server` / `DedicatedHost=true`): the host is not a player. It has no vote
+    in consensus mode, the world stays paused while no client is connected, and its own party is
+    parked and excluded from encounters, so the host never enters a mission.
 
 ## Separate battles and fast-forward
 
@@ -64,13 +67,19 @@ keeps every party removal, in order.
 
 ## Roadmap
 
-1. **In-game validation of v0.1** (this is the next step): host/join, time control, puppet movement,
+The order is chosen so that each step removes a limitation and makes the next one easier.
+
+1. **In-game validation of v0.1** with a dedicated host: host/join, time control, puppet movement,
    battle freeze, result, catch-up.
-2. **Save transfer on join:** the host sends its save to the client, which loads it automatically.
-3. **World replication:** spawn and despawn parties by host command; stop clients from running world AI;
-   sync settlement ownership, sieges, raids, wars and peace.
-4. **Interactions:** trade, recruiting, quests, dialogue outcomes, and clan/kingdom actions, each sent as a
-   host-validated command.
-5. **Separate clans per player**, hero death and capture sync, and joint battles (players fighting in the
-   same battle) using the multiplayer mission stack.
-6. **Dedicated or headless host**, so the host player's battles no longer pause the world.
+2. **World replication (the key step).** Clients stop running world AI and the host streams all of it:
+   spawn and despawn parties by host command, settlement ownership, sieges, raids, wars and peace. This
+   removes the drift between machines, which causes most of the remaining limitations.
+3. **Save transfer on join:** the server sends its save, and the client loads it automatically.
+4. **Interactions as host-validated commands:** trade, recruiting, quests, dialogue outcomes, and
+   clan/kingdom actions.
+5. **Separate clans per player**, and hero death and capture sync.
+6. **Joint battles** (several players in one battle) using the multiplayer mission stack.
+7. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),
+   and TaleWorlds' headless dedicated server only ships the multiplayer modules. Loading the campaign
+   modules into it might work or might hit a hard wall; until that's tried, the dedicated host is a
+   normal game window.

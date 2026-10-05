@@ -19,7 +19,9 @@ hero and party; the host's game runs the world.
 - **Fast-forward after battle.** When you leave the battle, your clock is behind the world. Your game
   fast-forwards (16× by default) and replays what happened while you were away until it catches up.
 - **The host is special.** The host's machine simulates the world, so while the **host** is in a battle
-  the world pauses for everyone.
+  the world pauses for everyone. To avoid that, run a **dedicated host**: a separate game instance (on
+  another PC, or a second instance on yours) started with `mp.server`. Nobody plays on it, so it
+  never pauses the world, and every player, you included, joins as a client.
 
 ## Install
 
@@ -35,12 +37,15 @@ hero and party; the host's game runs the world.
    (Alt + ~) to see the hero ids. **Save**, and send the save file to your friends
    (`Documents/Mount and Blade II Bannerlord/Game Saves/`).
 2. **Host:** run `mp.host` (or `mp.host <port>`; the default is 7777/UDP, forward it for internet play).
+   For a dedicated host, run `mp.server` instead and leave that game window running. Every player then
+   joins it with `mp.join`, each with their own hero.
 3. **Each friend:** load that same save, then run `mp.join <host-ip> <hero_id>`. You take control of that
    hero; your world catches up to the host's.
 
 | Command | What it does |
 |---|---|
-| `mp.host [port]` | Host the loaded campaign |
+| `mp.host [port]` | Host the loaded campaign and play on it |
+| `mp.server [port]` | Run this game as a dedicated world host (nobody plays here) |
 | `mp.join <address> <hero_id> [port]` | Join a host, playing as `hero_id` |
 | `mp.heroes` | List the clan heroes players can take |
 | `mp.status` | Show the players, the shared speed and sync state |
@@ -80,7 +85,8 @@ the AI and economy, and those copies drift apart. Not synchronized yet:
   another player's party are blocked.
 - **Joining** requires every player to load the same save by hand. The save is not transferred
   automatically.
-- **The host in a battle** pauses the world for everyone.
+- **The host in a battle** pauses the world for everyone, unless you use a dedicated host (`mp.server`).
+  The dedicated host still needs a full game window. A headless server is not possible yet.
 - **Joining players take a companion party inside the host's clan.** They don't get a clan of their own.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works and the roadmap.
