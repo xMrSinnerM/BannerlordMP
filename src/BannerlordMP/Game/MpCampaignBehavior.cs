@@ -21,6 +21,10 @@ namespace BannerlordMP.Game
             CampaignEvents.MakePeace.AddNonSerializedListener(this, (a, b, detail) => World(WorldEventKind.Peace, a?.StringId, b?.StringId));
             CampaignEvents.OnClanChangedKingdomEvent.AddNonSerializedListener(this, (clan, oldKingdom, newKingdom, detail, notify) =>
                 World(WorldEventKind.ClanKingdom, clan?.StringId, newKingdom?.StringId ?? string.Empty));
+            CampaignEvents.OnSiegeEventStartedEvent.AddNonSerializedListener(this, siege =>
+                World(WorldEventKind.SiegeStarted, siege?.BesiegedSettlement?.StringId, siege?.BesiegerCamp?.LeaderParty?.StringId));
+            CampaignEvents.OnSiegeEventEndedEvent.AddNonSerializedListener(this, siege =>
+                World(WorldEventKind.SiegeEnded, siege?.BesiegedSettlement?.StringId, string.Empty));
             CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
                 World(WorldEventKind.HeroKilled, victim?.StringId, killer?.StringId ?? string.Empty));
         }

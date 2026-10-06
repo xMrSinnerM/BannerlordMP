@@ -24,6 +24,8 @@ namespace BannerlordMP
         public float SnapshotRateHz = 4f;
         public float CatchUpMultiplier = 16f;
         public double CatchUpThresholdHours = 0.5;
+        /// <summary>Server autosave interval in real minutes; 0 turns it off.</summary>
+        public float AutoSaveMinutes = 5f;
 
         // Client features that can each be switched off on their own, to find which one misbehaves.
         /// <summary>Switch off this campaign's own world simulation while joined (the host runs it).</summary>
@@ -119,6 +121,8 @@ namespace BannerlordMP
                     config.SnapshotRateHz = r;
                 if (values.TryGetValue("CatchUpMultiplier", out var mult) && float.TryParse(mult, NumberStyles.Float, CultureInfo.InvariantCulture, out var cm) && cm >= 1)
                     config.CatchUpMultiplier = cm;
+                if (values.TryGetValue("AutoSaveMinutes", out var autosave) && float.TryParse(autosave, NumberStyles.Float, CultureInfo.InvariantCulture, out var asm) && asm >= 0)
+                    config.AutoSaveMinutes = asm;
                 config.ClientMirrorWorld = Flag(values, "ClientMirrorWorld", config.ClientMirrorWorld);
                 config.ClientPuppetParties = Flag(values, "ClientPuppetParties", config.ClientPuppetParties);
                 config.ClientMirrorSpawns = Flag(values, "ClientMirrorSpawns", config.ClientMirrorSpawns);

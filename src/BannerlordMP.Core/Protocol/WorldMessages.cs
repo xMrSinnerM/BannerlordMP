@@ -88,6 +88,10 @@ namespace BannerlordMP.Core.Protocol
         ClanKingdom = 4,
         /// <summary>A = victim hero, B = killer hero (may be empty).</summary>
         HeroKilled = 5,
+        /// <summary>A = besieged settlement, B = besieging (leader) party.</summary>
+        SiegeStarted = 6,
+        /// <summary>A = settlement whose siege ended (lifted, broken or won).</summary>
+        SiegeEnded = 7,
     }
 
     /// <summary>

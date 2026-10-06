@@ -26,7 +26,9 @@ namespace BannerlordMP.Session
         {
             // Whatever caused it (the AI, the host player, or a client's proposal we just applied), it is now true in
             // the real world, so everyone mirrors it. The proposing client receives it too and finds nothing to do.
-            SendToPlayers(new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b });
+            var message = new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b };
+            Log.Info("World changed on the host, relaying: " + message);
+            SendToPlayers(message);
         }
 
         public override void OnLocalPartyCreated(MobileParty party)

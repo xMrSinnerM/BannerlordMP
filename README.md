@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.8, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.9, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -101,6 +101,7 @@ happens.
 | Troops of parties near you | Kept accurate, so the army you attack is the real one |
 | Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
 | Your own party and hero | Gold, troops, prisoners, items, health, skill xp, attribute and focus points, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
+| Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
 | Your money | Your game computes your clan's daily wages and income exactly as single player does; the server never changes your gold on its own |
@@ -113,7 +114,7 @@ happens.
   pop-up the server sends instead (see above).
 - **Not shared yet:**
   - settlement economies and markets (prosperity, stock, prices, so buying doesn't empty the server's market)
-  - sieges in progress
+  - siege progress details (siege engines, bombardment) beyond the siege itself
   - raids
   - quests
   - relations
@@ -132,6 +133,8 @@ happens.
   player whose hero is captured, or has lost their party, can't join until that's handled.
 - **The host in a battle** pauses the world for everyone, unless you use a dedicated host. The dedicated
   host still needs a full game window; a headless server is not possible yet.
-- **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins.
+- **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins, and a
+  `BannerlordMP_Autosave` written every 5 minutes (`AutoSaveMinutes` in `config.ini`). Joined players'
+  games don't autosave: the server's save is the real one.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works and the roadmap.

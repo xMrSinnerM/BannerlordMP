@@ -308,6 +308,7 @@ namespace BannerlordMP.Game
 
         public static void ApplyWorldEvent(WorldEventMessage message)
         {
+            Log.Info("World event applied: " + message);
             Remote(() =>
             {
                 try
@@ -348,6 +349,21 @@ namespace BannerlordMP.Game
                                 ChangeKingdomAction.ApplyByLeaveKingdom(clan, false);
                             else if (kingdom != null && clan.Kingdom != kingdom)
                                 ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, CampaignTime.Now, false);
+                            break;
+                        }
+                        case WorldEventKind.SiegeStarted:
+                        {
+                            var settlement = Find<Settlement>(message.A);
+                            var besieger = GameBridge.FindParty(message.B);
+                            if (settlement != null && besieger != null && besieger.IsActive && settlement.SiegeEvent == null)
+                                Campaign.Current.SiegeEventManager.StartSiegeEvent(settlement, besieger);
+                            break;
+                        }
+                        case WorldEventKind.SiegeEnded:
+                        {
+                            var siege = Find<Settlement>(message.A)?.SiegeEvent;
+                            if (siege != null && !siege.ReadyToBeRemoved)
+                                siege.FinalizeSiegeEvent();
                             break;
                         }
                         case WorldEventKind.HeroKilled:

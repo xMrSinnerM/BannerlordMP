@@ -64,6 +64,8 @@ namespace BannerlordMP.Session
 
         private int _nextPlayerId = 1;
         private bool _saving;
+        private bool _autoSaving;
+        private double _nextAutoSaveAt;
         private float _snapshotTimer;
         private float _timeStateTimer;
         private int _snapshotCount;
@@ -152,8 +154,9 @@ namespace BannerlordMP.Session
             if (_arbiter.HostDetached)
                 return;
 
-            if (!_saving && _peers.Values.Any(p => p.WaitingForSave))
+            if (!_saving && !_autoSaving && _peers.Values.Any(p => p.WaitingForSave))
                 StartSave();
+            TickAutoSave();
 
             GameBridge.SetLocalTime(_arbiter.Effective, 0f);
             if (Config.DedicatedHost)
@@ -486,8 +489,43 @@ namespace BannerlordMP.Session
             }
         }
 
+        private void TickAutoSave()
+        {
+            if (Config.AutoSaveMinutes <= 0)
+                return;
+            if (_nextAutoSaveAt <= 0)
+            {
+                _nextAutoSaveAt = RealSeconds + Config.AutoSaveMinutes * 60;
+                return;
+            }
+            // Only from the map, and never on top of a save someone is waiting for.
+            if (RealSeconds < _nextAutoSaveAt || _saving || _autoSaving || !GameBridge.OnCampaignMap || _arbiter.HostDetached)
+                return;
+            _nextAutoSaveAt = RealSeconds + Config.AutoSaveMinutes * 60;
+            _autoSaving = true;
+            try
+            {
+                Log.Info("Autosaving the world as " + GameBridge.AutoSaveName);
+                GameBridge.SaveWorld(GameBridge.AutoSaveName);
+            }
+            catch (Exception e)
+            {
+                _autoSaving = false;
+                Log.Error("Autosave failed", e);
+            }
+        }
+
         private void OnSaveOver(bool success, string saveName)
         {
+            if (_autoSaving)
+            {
+                _autoSaving = false;
+                if (success)
+                    Log.Notify("World autosaved.");
+                else
+                    Log.Notify("Autosave failed. See BannerlordMP.log.");
+                return;
+            }
             if (!_saving)
                 return;
             _saving = false;

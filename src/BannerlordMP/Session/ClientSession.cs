@@ -167,7 +167,9 @@ namespace BannerlordMP.Session
         {
             if (!_welcomed || WorldBridge.ApplyingRemote)
                 return;
-            Net.SendToAll(new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b });
+            var message = new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b };
+            Log.Info("Proposing to the host: " + message);
+            Net.SendToAll(message);
         }
 
         public override void SendChat(string text)

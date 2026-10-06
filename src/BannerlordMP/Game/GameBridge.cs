@@ -389,6 +389,9 @@ namespace BannerlordMP.Game
         /// <summary>Name of the save the server writes for joining players. It shows up in the server's own save list.</summary>
         public const string ServerSaveName = "BannerlordMP_Server";
 
+        /// <summary>The server's periodic autosave.</summary>
+        public const string AutoSaveName = "BannerlordMP_Autosave";
+
         public static void SaveWorld(string saveName) => Campaign.Current.SaveHandler.SaveAs(saveName);
 
         public static byte[] ReadSaveFile(string saveName)
@@ -423,6 +426,7 @@ namespace BannerlordMP.Game
         {
             return (MBSaveLoad.GetSaveFiles(null) ?? new SaveGameFileInfo[0])
                 .Where(s => !s.IsCorrupted && s.Name != ServerSaveName && !s.Name.StartsWith("BannerlordMP_Join"))
+                .OrderByDescending(s => s.Name == AutoSaveName)
                 .ToList();
         }
 
