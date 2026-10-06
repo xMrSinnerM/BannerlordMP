@@ -29,5 +29,7 @@ namespace BannerlordMP.Core.Protocol
         LedgerDelta = 25,
         LedgerState = 26,
         PartyInfoRequest = 27,
+        DecisionVoteRequest = 28,
+        DecisionVote = 29,
     }
 }

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <LangVersion>10.0</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>0.3.7</Version>
+    <Version>0.3.8</Version>
     <Authors>BannerlordMP contributors</Authors>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>

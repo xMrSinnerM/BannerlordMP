@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.8, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -103,11 +103,14 @@ happens.
 | Your own party and hero | Gold, troops, prisoners, items, health, skill xp, attribute and focus points, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
+| Your money | Your game computes your clan's daily wages and income exactly as single player does; the server never changes your gold on its own |
+| Kingdom votes | When your kingdom must decide something, a pop-up asks for your vote (option, then how strongly to back it, with its influence cost; a ruler picks the outcome). The AI never votes for you: no answer means you abstain |
 | Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations
 
-- **Kingdom votes:** when your clan is a vassal, the AI still votes in kingdom decisions for you on the server.
+- **Kingdom decisions screen:** in your game it shows the decisions from when you joined. Vote through the
+  pop-up the server sends instead (see above).
 - **Not shared yet:**
   - settlement economies and markets (prosperity, stock, prices, so buying doesn't empty the server's market)
   - sieges in progress

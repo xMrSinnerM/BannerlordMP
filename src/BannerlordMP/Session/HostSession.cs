@@ -88,6 +88,7 @@ namespace BannerlordMP.Session
             // Heroes of players who are not online stay where they logged off, untouchable.
             foreach (var slot in _slots.Slots)
                 GameBridge.Freeze(GameBridge.FindHero(slot.HeroId)?.PartyBelongedTo);
+            RememberSlotHeroesGold();
 
             Net = CreateTransport(config);
             Net.PeerConnected += OnPeerConnected;
@@ -454,6 +455,7 @@ namespace BannerlordMP.Session
             }
 
             GameBridge.Freeze(hero.PartyBelongedTo);
+            RememberPlayerGold(hero);
             var slot = _slots.Add(hero.StringId, name, GameBridge.CultureName(hero), create.Salt, create.Key);
             SaveSlots();
             UpdateLobby();

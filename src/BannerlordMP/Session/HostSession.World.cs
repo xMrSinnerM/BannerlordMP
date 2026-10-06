@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Game;
+using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Party;
 
 namespace BannerlordMP.Session
@@ -17,6 +18,8 @@ namespace BannerlordMP.Session
         private readonly Dictionary<int, Dictionary<string, int>> _rostersSent = new Dictionary<int, Dictionary<string, int>>();
         private readonly Dictionary<int, int> _ledgerAck = new Dictionary<int, int>();
         private readonly Dictionary<string, double> _encounterRequested = new Dictionary<string, double>();
+        /// <summary>Player heroes' gold as their owners' games last set it. Nothing on the host may change it.</summary>
+        private readonly Dictionary<string, int> _playerGold = new Dictionary<string, int>();
         private float _worldTimer;
 
         public override void OnLocalWorldEvent(WorldEventKind kind, string a, string b)
@@ -34,6 +37,7 @@ namespace BannerlordMP.Session
 
         private void TickWorld(float dt)
         {
+            TickDecisions(dt);
             if (_spawnQueue.Count > 0)
             {
                 foreach (var party in _spawnQueue)
@@ -69,7 +73,9 @@ namespace BannerlordMP.Session
                 case LedgerDeltaMessage delta:
                 {
                     var party = Parties.Find(Players[playerId].PartyId, RealSeconds);
-                    WorldBridge.ApplyLedgerDelta(party, delta.Delta, onHost: true);
+                    EnforcePlayerGold(party?.LeaderHero);
+                    WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(party, delta.Delta, onHost: true));
+                    RememberPlayerGold(party?.LeaderHero);
                     _ledgerAck[playerId] = delta.Seq;
                     return true;
                 }
@@ -79,6 +85,10 @@ namespace BannerlordMP.Session
                     // kingdom). Friends trust each other: apply it; OnLocalWorldEvent then relays it to everyone.
                     Log.Info($"{NameOf(playerId)} changed the world: {proposal}");
                     WorldBridge.ApplyWorldEvent(proposal);
+                    return true;
+
+                case DecisionVoteMessage vote:
+                    HandleVote(playerId, vote);
                     return true;
 
                 case PartyInfoRequestMessage request:
@@ -93,8 +103,40 @@ namespace BannerlordMP.Session
             return false;
         }
 
+        /// <summary>
+        /// A player's money is theirs: their own game computes wages and income exactly as single player does.
+        /// The host sees their clan as an AI clan and would apply AI finances (and AI gold top-ups) to it, so any
+        /// gold change that did not come from the player is undone here.
+        /// </summary>
+        private void EnforcePlayerGold(Hero hero)
+        {
+            if (hero == null || !_playerGold.TryGetValue(hero.StringId, out var gold) || hero.Gold == gold)
+                return;
+            Log.Info($"Undid {hero.Gold - gold:+#;-#;0} gold the host's AI gave player hero {hero.StringId}");
+            hero.Gold = gold;
+        }
+
+        private void RememberPlayerGold(Hero hero)
+        {
+            if (hero != null)
+                _playerGold[hero.StringId] = hero.Gold;
+        }
+
+        private void RememberSlotHeroesGold()
+        {
+            foreach (var slot in _slots.Slots)
+            {
+                var hero = GameBridge.FindHero(slot.HeroId);
+                if (hero != null && !_playerGold.ContainsKey(hero.StringId))
+                    RememberPlayerGold(hero);
+            }
+        }
+
         private void OnPlayerEnteredWorld(int peer, int playerId, MobileParty party)
         {
+            // Restores what the hero had when its owner last played (or when the server started).
+            EnforcePlayerGold(party.LeaderHero);
+            RememberPlayerGold(party.LeaderHero);
             _rostersSent[playerId] = new Dictionary<string, int>();
             _ledgerAck[playerId] = 0;
             SendLedgerState(peer, playerId, party);
@@ -108,6 +150,7 @@ namespace BannerlordMP.Session
 
         private void SendLedgerState(int peer, int playerId, MobileParty party)
         {
+            EnforcePlayerGold(party.LeaderHero);
             _ledgerAck.TryGetValue(playerId, out var ack);
             Net.Send(peer, new LedgerStateMessage { AckSeq = ack, State = WorldBridge.CaptureLedger(party) });
         }

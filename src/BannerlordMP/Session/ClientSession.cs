@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Core.Protocol;
@@ -6,6 +7,7 @@ using BannerlordMP.Core.Time;
 using BannerlordMP.Game;
 using BannerlordMP.Net;
 using BannerlordMP.Steam;
+using BannerlordMP.Ui;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
@@ -50,6 +52,9 @@ namespace BannerlordMP.Session
         private float _partyStateTimer;
         private float _ledgerTimer;
         private bool _loggedFirstSnapshot;
+        private int _financeDay = -1;
+        private readonly Queue<DecisionVoteRequestMessage> _pendingVotes = new Queue<DecisionVoteRequestMessage>();
+        private bool _voteDialogOpen;
 
         /// <param name="resumeToken">One-time token from the join that downloaded this world.</param>
         /// <param name="heroId">The player's hero in that world.</param>
@@ -96,6 +101,8 @@ namespace BannerlordMP.Session
             ReportSyncChange(decision);
 
             ReplayBuffered(GameBridge.NowHours);
+            TickDailyFinances();
+            ShowPendingVote();
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
@@ -255,6 +262,10 @@ namespace BannerlordMP.Session
                 case EncounterRequestMessage encounter when Config.ClientAcceptEncounterRequests:
                     if (!_detached && !Buffering)
                         WorldBridge.StartEncounterWith(Parties.Find(encounter.AttackerPartyId, RealSeconds));
+                    break;
+
+                case DecisionVoteRequestMessage voteRequest:
+                    _pendingVotes.Enqueue(voteRequest);
                     break;
 
                 case ChatMessage chat:
@@ -462,6 +473,85 @@ namespace BannerlordMP.Session
             }
             foreach (var id in _missingFromHost.Keys.Where(id => !stillMissing.Contains(id)).ToList())
                 _missingFromHost.Remove(id);
+        }
+
+        /// <summary>Asks the player about the next pending kingdom decision, when they are free on the map.</summary>
+        private void ShowPendingVote()
+        {
+            if (_voteDialogOpen || _pendingVotes.Count == 0 || !GameBridge.IsOnMapWithoutMenu()
+                || TaleWorlds.Library.InformationManager.IsAnyInquiryActive())
+                return;
+
+            var request = _pendingVotes.Dequeue();
+            _voteDialogOpen = true;
+            var choices = request.Options.Select((o, i) => new Choice<int>(i, o.Title, hint: o.Description)).ToList();
+            choices.Add(new Choice<int>(-1, "Abstain"));
+            var text = $"{request.Description}\n\nDecided in {request.DaysLeft:0.#} days." +
+                       (request.IsRuler ? " As ruler, you choose the outcome." : "");
+
+            Dialogs.Choose($"{request.KingdomName}: {request.Title}", text, choices,
+                option =>
+                {
+                    if (option < 0)
+                        SendVote(request, -1, VoteWeight.Abstain);
+                    else if (request.IsRuler)
+                        SendVote(request, option, VoteWeight.Choose);
+                    else
+                        AskVoteWeight(request, option);
+                },
+                () => SendVote(request, -1, VoteWeight.Abstain),
+                "Vote");
+        }
+
+        private void AskVoteWeight(DecisionVoteRequestMessage request, int option)
+        {
+            var influence = Clan.PlayerClan?.Influence ?? 0f;
+            var weights = new[] { VoteWeight.SlightlyFavor, VoteWeight.StronglyFavor, VoteWeight.FullyPush };
+            var names = new[] { "Slightly favor", "Strongly favor", "Fully push" };
+            var choices = weights.Select((w, i) =>
+            {
+                var cost = i < request.WeightCosts.Count ? request.WeightCosts[i] : 0;
+                return new Choice<VoteWeight>(w, $"{names[i]} ({cost} influence)", cost <= influence, cost <= influence ? null : "Not enough influence");
+            }).ToList();
+            choices.Insert(0, new Choice<VoteWeight>(VoteWeight.Abstain, "Stay neutral"));
+            Dialogs.Choose(request.Options[option].Title, "How strongly does your clan back this?", choices,
+                weight => SendVote(request, weight == VoteWeight.Abstain ? -1 : option, weight),
+                () => SendVote(request, -1, VoteWeight.Abstain),
+                "Vote");
+        }
+
+        private void SendVote(DecisionVoteRequestMessage request, int option, VoteWeight weight)
+        {
+            _voteDialogOpen = false;
+            Net.SendToAll(new DecisionVoteMessage { DecisionId = request.DecisionId, OptionIndex = option, Weight = weight });
+            Log.Notify(option < 0 ? $"You abstain on: {request.Title}" : $"You voted: {request.Options[option].Title}");
+        }
+
+        private void TickDailyFinances()
+        {
+            if (!Config.ClientSyncOwnParty)
+                return;
+            var day = (int)Math.Floor(GameBridge.NowHours / 24);
+            if (_financeDay < 0)
+            {
+                _financeDay = day;
+                return;
+            }
+            // Several days can pass during a catch-up; settle each one (bounded, in case of a huge jump).
+            for (var guard = 0; _financeDay < day && guard < 30; guard++)
+            {
+                _financeDay++;
+                try
+                {
+                    var change = GameBridge.ApplyDailyClanFinances();
+                    Log.Info($"Client: daily clan finances for day {_financeDay}: {change:+#;-#;0} gold");
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Daily clan finances failed", e);
+                }
+            }
+            _financeDay = day;
         }
 
         private void SendLedgerChanges()

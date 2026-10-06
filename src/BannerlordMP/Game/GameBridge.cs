@@ -435,6 +435,22 @@ namespace BannerlordMP.Game
             yield return FileDriver.GetSaveFilePath(saveName);
         }
 
+        /// <summary>
+        /// Client: one day of the player clan's finances, exactly as single player computes them (wages, fief,
+        /// workshop and caravan income...). The client's daily ticks are off, and the host treats the clan as an
+        /// AI clan, so this is where a joined player's money really comes from.
+        /// </summary>
+        public static int ApplyDailyClanFinances()
+        {
+            var clan = Clan.PlayerClan;
+            var leader = Hero.MainHero;
+            if (clan == null || leader == null || leader.Clan != clan)
+                return 0;
+            var change = Campaign.Current.Models.ClanFinanceModel.CalculateClanGoldChange(clan, false, true, false).RoundedResultNumber;
+            leader.Gold = Math.Max(0, leader.Gold + change);
+            return change;
+        }
+
         public static bool AtMainMenu => GameStateManager.Current?.ActiveState is InitialState;
 
         public static bool OnCampaignMap => Campaign.Current != null && GameStateManager.Current?.ActiveState is MapState;

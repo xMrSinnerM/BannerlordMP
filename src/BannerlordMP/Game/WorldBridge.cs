@@ -52,6 +52,8 @@ namespace BannerlordMP.Game
             if (hero != null)
             {
                 ledger["g"] = hero.Gold;
+                if (hero.Clan != null && hero.Clan.Leader == hero)
+                    ledger["inf"] = (int)Math.Floor(hero.Clan.Influence);
                 ledger["hp"] = hero.HitPoints;
                 var developer = hero.HeroDeveloper;
                 foreach (var skill in Skills.All)
@@ -103,6 +105,8 @@ namespace BannerlordMP.Game
                 {
                     if (key == "g" && hero != null)
                         hero.Gold = Math.Max(0, hero.Gold + change);
+                    else if (key == "inf" && hero?.Clan != null)
+                        hero.Clan.Influence += change;
                     else if (key == "hp" && hero != null)
                         hero.HitPoints = Math.Max(1, Math.Min(hero.MaxHitPoints, hero.HitPoints + change));
                     else if (key.StartsWith("x:") && hero != null && change > 0)

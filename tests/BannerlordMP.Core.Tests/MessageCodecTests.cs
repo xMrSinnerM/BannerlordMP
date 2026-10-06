@@ -188,6 +188,25 @@ namespace BannerlordMP.Core.Tests
         }
 
         [Fact]
+        public void DecisionMessages()
+        {
+            var request = RoundTrip(new DecisionVoteRequestMessage
+            {
+                DecisionId = 7, KingdomName = "Vlandia", Title = "Declare war", Description = "on Battania", IsRuler = true, DaysLeft = 2.5f,
+                Options = new List<DecisionOption> { new DecisionOption { Title = "Yes", Description = "War" }, new DecisionOption { Title = "No" } },
+                WeightCosts = new List<int> { 10, 30, 60 },
+            });
+            Assert.Equal(7, request.DecisionId);
+            Assert.True(request.IsRuler);
+            Assert.Equal("War", request.Options[0].Description);
+            Assert.Equal(60, request.WeightCosts[2]);
+
+            var vote = RoundTrip(new DecisionVoteMessage { DecisionId = 7, OptionIndex = 1, Weight = VoteWeight.StronglyFavor });
+            Assert.Equal(1, vote.OptionIndex);
+            Assert.Equal(VoteWeight.StronglyFavor, vote.Weight);
+        }
+
+        [Fact]
         public void UnknownTypeIsRejected()
         {
             Assert.Throws<InvalidDataException>(() => MessageCodec.Decode(new byte[] { 250 }));
