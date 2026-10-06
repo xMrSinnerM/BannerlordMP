@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.9, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.10, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -41,7 +41,9 @@ Everything is in the main menu.
    find it: Steam friends, Steam invite only, Steam public, or LAN/direct IP only.
 2. Choose **Play on this PC** or **Dedicated server**. On a dedicated server nobody plays and the world
    never pauses for battles.
-3. Pick a save, or start a new sandbox campaign. The server starts once the world is on the map. With
+3. Pick a save, or start a new sandbox campaign. To continue a co-op campaign, pick
+   **BannerlordMP_Autosave** (listed first): it has every player hero and their progress. The server
+   also saves when a player leaves. The server starts once the world is on the map. With
    Steam, you're offered the Steam invite dialog.
 
 **Join Co-op Campaign**
@@ -65,6 +67,7 @@ play. That traffic is not encrypted (passwords are still never sent).
 | `mp.host [port]` / `mp.server [port]` | Host the campaign that's already loaded (normal or dedicated), with settings from `config.ini` |
 | `mp.join <address[:port]>` | Join by address from the main menu |
 | `mp.invite` | Open the Steam invite dialog (host) |
+| `mp.save` | Save the server's world now (as `BannerlordMP_Autosave`) |
 | `mp.slots` / `mp.removeslot <n>` | List player heroes / free a slot (the hero stays in the world as an AI lord) |
 | `mp.status` | Players, shared speed, sync state |
 | `mp.say <text>` | Chat |

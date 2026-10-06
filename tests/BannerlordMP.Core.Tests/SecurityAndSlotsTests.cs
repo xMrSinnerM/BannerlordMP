@@ -71,6 +71,34 @@ namespace BannerlordMP.Core.Tests
         }
 
         [Fact]
+        public void SlotKeepsCultureAndGenderAndCanChangeHero()
+        {
+            var registry = new SlotRegistry(2);
+            var salt = PasswordProof.NewSalt();
+            var slot = registry.Add("h1", "Ana", "Vlandia", salt, PasswordProof.DeriveKey("pw", salt), "vlandia", isFemale: true);
+            Assert.True(registry.ReplaceHero(slot.SlotId, "h2"));
+            Assert.False(registry.ReplaceHero(99, "x"));
+
+            var loaded = SlotRegistry.Deserialize(registry.Serialize(), 2).Slots.Single();
+            Assert.Equal("h2", loaded.HeroId);
+            Assert.Equal("vlandia", loaded.CultureId);
+            Assert.True(loaded.IsFemale);
+        }
+
+        [Fact]
+        public void OldSlotFilesStillLoad()
+        {
+            var salt = Convert.ToBase64String(new byte[16]);
+            var key = Convert.ToBase64String(new byte[32]);
+            string B(string v) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(v));
+            var text = "BannerlordMP slots v1\nmax=3\n" + string.Join("|", "1", B("h1"), B("Ana"), B("Vlandia"), salt, key) + "\n";
+            var slot = SlotRegistry.Deserialize(text, 4).Slots.Single();
+            Assert.Equal("h1", slot.HeroId);
+            Assert.Equal(string.Empty, slot.CultureId);
+            Assert.False(slot.IsFemale);
+        }
+
+        [Fact]
         public void EmptyOrForeignSlotFiles()
         {
             Assert.Empty(SlotRegistry.Deserialize("", 4).Slots);

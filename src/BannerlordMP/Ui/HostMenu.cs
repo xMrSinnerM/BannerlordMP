@@ -109,7 +109,13 @@ namespace BannerlordMP.Ui
         private static void AskWorld(MpConfig config)
         {
             var choices = new List<Choice<string>> { new Choice<string>(NewCampaign, "New sandbox campaign", hint: "Create the host's character, then the server starts.") };
-            choices.AddRange(GameBridge.ListSaves().Select(s => new Choice<string>(s.Name, s.Name)));
+            choices.AddRange(GameBridge.ListSaves().Select(s => new Choice<string>(s.Name,
+                s.Name == GameBridge.AutoSaveName ? s.Name + "  (server autosave: continue here)"
+                : s.Name == GameBridge.ServerSaveName ? s.Name + "  (server save from the last join)"
+                : s.Name,
+                hint: s.Name == GameBridge.AutoSaveName || s.Name == GameBridge.ServerSaveName
+                    ? "Has all player heroes and their progress."
+                    : "If players joined this world before, load a server save instead, or their heroes will be missing.")));
             Dialogs.Choose("World", "Which campaign should the server run?", choices,
                 world =>
                 {

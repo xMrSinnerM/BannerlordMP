@@ -64,6 +64,15 @@ namespace BannerlordMP.Commands
             return SteamService.OpenInviteDialog() ? "Steam invite dialog opened." : "No Steam lobby (Steam unavailable or SteamVisibility=Off).";
         }
 
+        [CommandLineFunctionality.CommandLineArgumentFunction("save", "mp")]
+        public static string Save(List<string> args)
+        {
+            if (!(MpSession.Current is HostSession host))
+                return "Only the host saves the world.";
+            host.SaveSoon();
+            return "Saving the world as BannerlordMP_Autosave...";
+        }
+
         [CommandLineFunctionality.CommandLineArgumentFunction("slots", "mp")]
         public static string Slots(List<string> args)
         {

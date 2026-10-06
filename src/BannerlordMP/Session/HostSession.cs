@@ -87,6 +87,8 @@ namespace BannerlordMP.Session
 
             _slotFile = SlotFilePath(GameBridge.CampaignId);
             _slots = LoadSlots(_slotFile, config.MaxSlots);
+            AdoptBestSlotFile(config.MaxSlots);
+            WarnAboutTheLoadedWorld();
             // Heroes of players who are not online stay where they logged off, untouchable.
             foreach (var slot in _slots.Slots)
                 GameBridge.Freeze(GameBridge.FindHero(slot.HeroId)?.PartyBelongedTo);
@@ -403,8 +405,8 @@ namespace BannerlordMP.Session
                         Reject(peer, $"{slot.HeroName} is already being played.");
                     else if (!_slots.VerifyClaim(slot.SlotId, state.Nonce, claim.Proof))
                         Reject(peer, $"Wrong password for {slot.HeroName}.");
-                    else if (GameBridge.FindHero(slot.HeroId)?.IsAlive != true)
-                        Reject(peer, $"{slot.HeroName} has died. Ask the host to free the slot (mp.removeslot {slot.SlotId}) and create a new hero.");
+                    else if (GameBridge.FindHero(slot.HeroId)?.IsAlive != true && !RecreateHero(peer, slot))
+                        return;
                     else
                         QueueJoin(state, slot);
                     break;
@@ -459,12 +461,47 @@ namespace BannerlordMP.Session
 
             GameBridge.Freeze(hero.PartyBelongedTo);
             RememberPlayerGold(hero);
-            var slot = _slots.Add(hero.StringId, name, GameBridge.CultureName(hero), create.Salt, create.Key);
+            var slot = _slots.Add(hero.StringId, name, GameBridge.CultureName(hero), create.Salt, create.Key, create.CultureId, create.IsFemale);
             SaveSlots();
             UpdateLobby();
             Log.Notify($"New player hero {name} created (slot {slot.SlotId}).");
             QueueJoin(state, slot);
         }
+
+        /// <summary>
+        /// The slot's hero is not in this world (an older save was loaded) or has died. Rather than making the
+        /// player start over, give them a fresh hero with the same name, culture and gender in the same slot.
+        /// </summary>
+        private bool RecreateHero(int peer, PlayerSlot slot)
+        {
+            if (_arbiter.HostDetached || !GameBridge.OnCampaignMap)
+            {
+                Reject(peer, "The server is busy (host in a battle or menu). Try again in a moment.");
+                return false;
+            }
+            var cultureId = string.IsNullOrEmpty(slot.CultureId)
+                ? GameBridge.PlayableCultures().FirstOrDefault(c => c.Name == slot.CultureName).Id
+                : slot.CultureId;
+            try
+            {
+                var hero = GameBridge.CreatePlayerHero(slot.HeroName, cultureId ?? GameBridge.PlayableCultures().First().Id, slot.IsFemale);
+                GameBridge.Freeze(hero.PartyBelongedTo);
+                RememberPlayerGold(hero);
+                Log.Notify($"{slot.HeroName} was not in this world; recreated them (slot {slot.SlotId}).");
+                _slots.ReplaceHero(slot.SlotId, hero.StringId);
+                SaveSlots();
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not recreate hero for slot " + slot.SlotId, e);
+                Reject(peer, $"{slot.HeroName} is missing from this world and could not be recreated: {e.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>Saves the world now (host command or a player leaving).</summary>
+        public void SaveSoon() => _nextAutoSaveAt = RealSeconds;
 
         private void QueueJoin(PeerState state, PlayerSlot slot)
         {
@@ -491,17 +528,16 @@ namespace BannerlordMP.Session
 
         private void TickAutoSave()
         {
-            if (Config.AutoSaveMinutes <= 0)
-                return;
+            var interval = Config.AutoSaveMinutes > 0 ? Config.AutoSaveMinutes * 60 : double.MaxValue / 4;
             if (_nextAutoSaveAt <= 0)
             {
-                _nextAutoSaveAt = RealSeconds + Config.AutoSaveMinutes * 60;
+                _nextAutoSaveAt = RealSeconds + interval;
                 return;
             }
             // Only from the map, and never on top of a save someone is waiting for.
             if (RealSeconds < _nextAutoSaveAt || _saving || _autoSaving || !GameBridge.OnCampaignMap || _arbiter.HostDetached)
                 return;
-            _nextAutoSaveAt = RealSeconds + Config.AutoSaveMinutes * 60;
+            _nextAutoSaveAt = RealSeconds + interval;
             _autoSaving = true;
             try
             {
@@ -753,6 +789,7 @@ namespace BannerlordMP.Session
             BroadcastPlayerList();
             UpdateLobby();
             Log.Notify($"{player.Name} left ({reason}).");
+            SaveSoon(); // Keep their progress even if the server is closed right after.
         }
 
         private void Reject(int peer, string reason)
@@ -886,6 +923,54 @@ namespace BannerlordMP.Session
                 Log.Error("Could not read slot file " + path, e);
                 throw new InvalidOperationException("The player slot file is unreadable: " + path, e);
             }
+        }
+
+        /// <summary>
+        /// The slot file is named after the campaign id, but saves made along the way can carry a different id.
+        /// If this campaign's file has no heroes in the loaded world, use the slot file whose heroes are.
+        /// </summary>
+        private void AdoptBestSlotFile(int maxSlots)
+        {
+            int Present(SlotRegistry registry) => registry.Slots.Count(slot => GameBridge.FindHero(slot.HeroId) != null);
+            if (_slots.Slots.Count > 0 && Present(_slots) == _slots.Slots.Count)
+                return;
+            try
+            {
+                var directory = Path.GetDirectoryName(_slotFile);
+                if (!Directory.Exists(directory))
+                    return;
+                var best = Directory.GetFiles(directory, "*.slots")
+                    .Select(path => { try { return (Path: path, Registry: SlotRegistry.Deserialize(File.ReadAllText(path), maxSlots)); } catch { return (Path: path, Registry: (SlotRegistry)null); } })
+                    .Where(c => c.Registry != null)
+                    .Select(c => (c.Path, c.Registry, Count: Present(c.Registry)))
+                    .OrderByDescending(c => c.Count)
+                    .FirstOrDefault();
+                if (best.Registry == null || best.Count <= Present(_slots))
+                    return;
+                Log.Info($"Using player slots from {best.Path}: {best.Count} of their heroes are in this world");
+                _slots.MaxSlots = maxSlots;
+                foreach (var slot in best.Registry.Slots)
+                {
+                    if (_slots.Find(slot.SlotId) == null && _slots.FindByHero(slot.HeroId) == null && _slots.CanCreate)
+                        _slots.Add(slot.HeroId, slot.HeroName, slot.CultureName, slot.Salt, slot.Key, slot.CultureId, slot.IsFemale);
+                }
+                SaveSlots();
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not look for other slot files", e);
+            }
+        }
+
+        private void WarnAboutTheLoadedWorld()
+        {
+            if (_slots.FindByHero(Hero.MainHero?.StringId) != null)
+                Log.Notify("Warning: this save was made by a player's game, not the server (its main hero is a player's hero). " +
+                           "Load BannerlordMP_Autosave or BannerlordMP_Server instead.");
+            var missing = _slots.Slots.Where(slot => GameBridge.FindHero(slot.HeroId) == null).Select(slot => slot.HeroName).ToList();
+            if (missing.Count > 0)
+                Log.Notify($"{missing.Count} player hero(es) are not in this save ({string.Join(", ", missing)}): an older save was loaded. " +
+                           "Load BannerlordMP_Autosave to keep their progress; otherwise they are recreated when they join.");
         }
 
         /// <summary>Slots live next to the mod, one file per campaign, so they never travel inside the save sent to players.</summary>

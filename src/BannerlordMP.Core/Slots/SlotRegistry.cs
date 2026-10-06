@@ -13,6 +13,9 @@ namespace BannerlordMP.Core.Slots
         public string HeroId = string.Empty;
         public string HeroName = string.Empty;
         public string CultureName = string.Empty;
+        /// <summary>Culture id, kept so the hero can be recreated if the server lost it.</summary>
+        public string CultureId = string.Empty;
+        public bool IsFemale;
         public byte[] Salt = Array.Empty<byte>();
         public byte[] Key = Array.Empty<byte>();
     }
@@ -46,7 +49,7 @@ namespace BannerlordMP.Core.Slots
         public bool IsNameTaken(string heroName) =>
             _slots.Any(s => string.Equals(s.HeroName, heroName?.Trim(), StringComparison.OrdinalIgnoreCase));
 
-        public PlayerSlot Add(string heroId, string heroName, string cultureName, byte[] salt, byte[] key)
+        public PlayerSlot Add(string heroId, string heroName, string cultureName, byte[] salt, byte[] key, string cultureId = "", bool isFemale = false)
         {
             if (!CanCreate)
                 throw new InvalidOperationException("All slots are taken.");
@@ -58,11 +61,23 @@ namespace BannerlordMP.Core.Slots
                 HeroId = heroId,
                 HeroName = heroName,
                 CultureName = cultureName ?? string.Empty,
+                CultureId = cultureId ?? string.Empty,
+                IsFemale = isFemale,
                 Salt = salt,
                 Key = key,
             };
             _slots.Add(slot);
             return slot;
+        }
+
+        /// <summary>The slot's hero was recreated (the server's world no longer had it). Password and slot stay.</summary>
+        public bool ReplaceHero(int slotId, string heroId)
+        {
+            var slot = Find(slotId);
+            if (slot == null)
+                return false;
+            slot.HeroId = heroId;
+            return true;
         }
 
         public bool Remove(int slotId) => _slots.RemoveAll(s => s.SlotId == slotId) > 0;
@@ -86,7 +101,9 @@ namespace BannerlordMP.Core.Slots
                     Encode(s.HeroName),
                     Encode(s.CultureName),
                     Convert.ToBase64String(s.Salt),
-                    Convert.ToBase64String(s.Key)));
+                    Convert.ToBase64String(s.Key),
+                    Encode(s.CultureId),
+                    s.IsFemale ? "f" : "m"));
             }
             return sb.ToString();
         }
@@ -110,7 +127,8 @@ namespace BannerlordMP.Core.Slots
                     continue;
                 }
                 var parts = line.Split('|');
-                if (parts.Length != 6)
+                // Six fields in files written before culture id and gender were kept.
+                if (parts.Length != 6 && parts.Length != 8)
                     throw new FormatException("Corrupt slot line.");
                 registry._slots.Add(new PlayerSlot
                 {
@@ -120,6 +138,8 @@ namespace BannerlordMP.Core.Slots
                     CultureName = Decode(parts[3]),
                     Salt = Convert.FromBase64String(parts[4]),
                     Key = Convert.FromBase64String(parts[5]),
+                    CultureId = parts.Length > 6 ? Decode(parts[6]) : string.Empty,
+                    IsFemale = parts.Length > 7 && parts[7] == "f",
                 });
             }
             return registry;

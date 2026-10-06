@@ -356,33 +356,33 @@ namespace BannerlordMP.Game
             hero.SetName(heroName, heroName);
             hero.ChangeState(Hero.CharacterStates.Active);
 
+            // Built by hand on purpose. Clan.CreateCompanionToLordClan (used when knighting a companion) hands the
+            // new clan a town and ties it to the host's clan, which gave players a fief they never took.
             var clanName = new TextObject(name + "'s Clan");
-            Clan clan;
-            try
-            {
-                clan = Clan.CreateCompanionToLordClan(hero, settlement, clanName, BannerManager.Instance.GetRandomBannerIconId(new MBFastRandom()));
-            }
-            catch (Exception e)
-            {
-                Log.Error("CreateCompanionToLordClan failed, building the clan by hand", e);
-                clan = Clan.CreateClan("bmp_clan_" + hero.StringId);
-                clan.ChangeClanName(clanName, clanName);
-                clan.Culture = culture;
-                clan.Banner = Banner.CreateRandomClanBanner(MBRandom.RandomInt(int.MaxValue));
-                clan.SetInitialHomeSettlement(settlement);
-                hero.Clan = clan;
-                clan.SetLeader(hero);
-                clan.IsNoble = true;
-            }
+            var clan = Clan.CreateClan("bmp_clan_" + hero.StringId);
+            clan.ChangeClanName(clanName, clanName);
+            clan.Culture = culture;
+            clan.BasicTroop = culture.BasicTroop;
+            var banner = Banner.CreateRandomClanBanner(MBRandom.RandomInt(int.MaxValue));
+            clan.Banner = banner;
+            clan.UpdateBannerColor(banner.GetPrimaryColor(), banner.GetFirstIconColor());
+            clan.SetInitialHomeSettlement(settlement);
+            hero.Clan = clan;
+            clan.SetLeader(hero);
+            clan.IsNoble = true;
+            CampaignEventDispatcher.Instance.OnClanCreated(clan, false);
 
             var party = hero.PartyBelongedTo;
             if (party == null || party.LeaderHero != hero)
                 party = LordPartyComponent.CreateLordParty("bmp_party_" + hero.StringId, hero, settlement.GatePosition, 3f, settlement, hero);
+            // Start outside the town: a party created inside a settlement it does not belong to confuses menus.
+            if (party.CurrentSettlement != null)
+                LeaveSettlementAction.ApplyForParty(party);
 
             if (culture.BasicTroop != null)
                 party.MemberRoster.AddToCounts(culture.BasicTroop, 20, false, 0, 0, true, -1);
             hero.Gold = 5000;
-            Log.Info($"Created player hero {hero.StringId} ({name}, {culture.StringId}) in clan {clan?.StringId} at {settlement.StringId}");
+            Log.Info($"Created player hero {hero.StringId} ({name}, {culture.StringId}) in clan {clan.StringId} near {settlement.StringId}");
             return hero;
         }
 
@@ -425,8 +425,10 @@ namespace BannerlordMP.Game
         public static List<SaveGameFileInfo> ListSaves()
         {
             return (MBSaveLoad.GetSaveFiles(null) ?? new SaveGameFileInfo[0])
-                .Where(s => !s.IsCorrupted && s.Name != ServerSaveName && !s.Name.StartsWith("BannerlordMP_Join"))
+                // BannerlordMP_Join is a player's downloaded copy, never a world to host.
+                .Where(s => !s.IsCorrupted && !s.Name.StartsWith("BannerlordMP_Join"))
                 .OrderByDescending(s => s.Name == AutoSaveName)
+                .ThenByDescending(s => s.Name == ServerSaveName)
                 .ToList();
         }
 
@@ -472,6 +474,10 @@ namespace BannerlordMP.Game
             {
                 party.Ai.DisableAi();
                 party.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
+                // A party inside a settlement is still in its party list; the game walks that list when anyone
+                // enters or leaves, so an inactive one there crashes it. Hidden puppets are harmless.
+                if (party.CurrentSettlement != null)
+                    return;
                 party.IsVisible = false;
                 party.IsActive = false;
             }
