@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.10, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.11, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -36,23 +36,20 @@ hero and party; the host's game runs the world.
 
 Everything is in the main menu.
 
-**Host Co-op Campaign**
-1. Pick a server name, a password (optional), how many player heroes the server allows, and who can
-   find it: Steam friends, Steam invite only, Steam public, or LAN/direct IP only.
-2. Choose **Play on this PC** or **Dedicated server**. On a dedicated server nobody plays and the world
-   never pauses for battles.
-3. Pick a save, or start a new sandbox campaign. To continue a co-op campaign, pick
-   **BannerlordMP_Autosave** (listed first): it has every player hero and their progress. The server
-   also saves when a player leaves. The server starts once the world is on the map. With
-   Steam, you're offered the Steam invite dialog.
+**Host Co-op Campaign** opens one screen with every setting: world, mode (play on this PC or dedicated
+server), server name, password, number of player heroes, and who can find it (Steam friends, Steam invites,
+public, or LAN/IP only). Click a line to change it, then **Start server**. Your choices are remembered, and
+the world defaults to **BannerlordMP_Autosave**, the latest server save with every player hero in it. With
+Steam, you're offered the invite dialog once the server is up.
 
-**Join Co-op Campaign**
-1. The server browser lists Steam friends' servers, public Steam servers and LAN servers, plus
-   **Direct connect** for an IP address. Accepting a Steam invite connects straight away.
-2. Enter the server password if it has one.
-3. Pick your hero and enter its password, or **Create a new hero**: name, culture, gender and a hero
-   password. A new hero gets their own clan, a party at a town of their culture, 20 troops and 5000 gold.
-4. Your game downloads the server's current world, loads it, and puts you in control of your hero.
+**Join Co-op Campaign** opens the server browser: **Rejoin** your last server at the top, then Steam friends'
+servers, public Steam servers, LAN servers, and **Direct connect** for an IP address. Accepting a Steam invite
+connects straight away. Enter the server password if it has one, then:
+- **Your hero** (your last one is listed first): enter its password and play.
+- **Create a new hero**: one screen for name, culture, gender and password, then **Create hero**. A new
+  hero gets their own clan, a party near a town of their culture, 20 troops and 5000 gold.
+
+Your game then downloads the server's current world, loads it, and puts you in control of your hero.
 
 Nobody can play your hero without its password. The server never receives passwords in clear: it
 stores only a salted, stretched key and checks a one-time proof at each login. Slots are kept on the

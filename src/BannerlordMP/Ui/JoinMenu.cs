@@ -139,6 +139,15 @@ namespace BannerlordMP.Ui
             var choices = new List<Choice<Action>>();
             var seenHosts = new HashSet<ulong>();
 
+            var lastServer = MenuMemory.Get("Join.LastServer");
+            if (TryParseRemembered(MenuMemory.Get("Join.LastTarget"), out var lastTarget))
+            {
+                var hero = MenuMemory.Get("Join.Hero." + lastServer);
+                choices.Add(new Choice<Action>(() => ConnectTo(lastTarget),
+                    $">>  Rejoin {(string.IsNullOrEmpty(lastServer) ? lastTarget.ToString() : lastServer)}{(string.IsNullOrEmpty(hero) ? "" : " as " + hero)}  <<",
+                    hint: "The server you played on last"));
+            }
+
             foreach (var lobby in SteamService.ReadFriendLobbies().Concat(_steamLobbies ?? new List<SteamLobbyEntry>()))
             {
                 if (!seenHosts.Add(lobby.HostSteamId))
@@ -163,13 +172,29 @@ namespace BannerlordMP.Ui
             choices.Add(new Choice<Action>(AskAddress, "Direct connect (IP address)..."));
             choices.Add(new Choice<Action>(Open, "Refresh"));
 
-            var text = choices.Count > 2 ? "Choose a server:" : "No servers found. Ask the host for a Steam invite or their IP address.";
+            var found = choices.Count(c => c.Label.StartsWith("["));
+            var text = found > 0 ? "Choose a server:" : "No servers found nearby. Ask the host for a Steam invite or their IP address.";
             Dialogs.Choose("Join Co-op Campaign", text, choices, action => action(), CloseSearch, "Join");
         }
 
         private static string Describe(string name, bool password, int online, int used, int max)
         {
-            return $"{(string.IsNullOrEmpty(name) ? "Unnamed server" : name)}{(password ? " (password)" : "")} — {online} online, {used}/{max} heroes";
+            return $"{(string.IsNullOrEmpty(name) ? "Unnamed server" : name)}{(password ? "  [password]" : "")}   {online} online, {used}/{max} heroes";
+        }
+
+        private static string Remember(ConnectTarget target) => target.IsSteam ? "steam:" + target.SteamId : $"ip:{target.Address}:{target.Port}";
+
+        private static bool TryParseRemembered(string text, out ConnectTarget target)
+        {
+            target = null;
+            if (string.IsNullOrEmpty(text))
+                return false;
+            if (text.StartsWith("steam:") && ulong.TryParse(text.Substring(6), out var id))
+            {
+                target = ConnectTarget.Steam(id);
+                return true;
+            }
+            return text.StartsWith("ip:") && TryParseAddress(text.Substring(3), MpConfig.Load().Port, out target);
         }
 
         private static void AskAddress()
@@ -187,74 +212,104 @@ namespace BannerlordMP.Ui
 
         private static void ShowSlots(SlotListMessage list)
         {
-            var choices = list.Slots.Select(s => new Choice<SlotInfo>(s,
-                $"{s.HeroName} ({s.CultureName}){(s.InUse ? " — being played" : "")}",
-                !s.InUse, "Your hero: you will need its password")).ToList();
+            var serverName = _connection?.ServerName ?? "Server";
+            var lastHero = MenuMemory.Get("Join.Hero." + serverName);
+            var choices = list.Slots
+                .OrderByDescending(slot => slot.HeroName == lastHero)
+                .Select(slot => new Choice<SlotInfo>(slot,
+                    $"{slot.HeroName}  ({slot.CultureName}){(slot.HeroName == lastHero ? "   your last hero" : "")}{(slot.InUse ? "   - being played" : "")}",
+                    !slot.InUse, "Needs this hero's password"))
+                .ToList();
             var free = list.MaxSlots - list.Slots.Count;
             if (free > 0)
-                choices.Add(new Choice<SlotInfo>(CreateNewHero, $"Create a new hero ({free} of {list.MaxSlots} slots free)"));
-            var text = choices.Count == 0
-                ? "This server has no free hero slots."
-                : "Pick your hero, or create a new one.";
-            Dialogs.Choose(_connection?.ServerName ?? "Server", text, choices,
+                choices.Add(new Choice<SlotInfo>(CreateNewHero, $"+  Create a new hero   ({free} of {list.MaxSlots} free)"));
+            var text = choices.Count == 0 ? "This server has no free hero slots." : "Pick your hero, or create a new one.";
+            Dialogs.Choose(serverName, text, choices,
                 slot =>
                 {
                     if (slot == CreateNewHero)
-                        AskNewHeroName(list);
+                        ShowNewHero(list, new NewHero { Culture = list.Cultures.FirstOrDefault().Id });
                     else
                         Dialogs.Text(slot.HeroName, $"Password for {slot.HeroName}:", password => _connection?.ClaimSlot(slot, password),
                             () => ShowSlots(list), password: true);
                 },
-                Cancel);
+                Cancel, "Play");
         }
 
-        private static void AskNewHeroName(SlotListMessage list)
+        private sealed class NewHero
         {
-            Dialogs.Text("New hero", "Your hero's name:",
-                name => AskCulture(list, name.Trim()),
-                () => ShowSlots(list),
-                validate: name =>
+            public string Name = string.Empty;
+            public string Culture;
+            public bool Female;
+            public string Password = string.Empty;
+        }
+
+        private enum HeroItem
+        {
+            Create,
+            Name,
+            Culture,
+            Gender,
+            Password,
+        }
+
+        /// <summary>New hero on one screen: click a line to change it, then "Create hero".</summary>
+        private static void ShowNewHero(SlotListMessage list, NewHero hero)
+        {
+            var cultureName = list.Cultures.FirstOrDefault(c => c.Id == hero.Culture).Name ?? "?";
+            var ready = hero.Name.Length >= 2 && hero.Password.Length >= 4 && hero.Culture != null;
+            var choices = new List<Choice<HeroItem>>
+            {
+                new Choice<HeroItem>(HeroItem.Create, ">>  Create hero  <<", ready, ready ? "Joins the server as this hero." : "Give your hero a name and a password first."),
+                new Choice<HeroItem>(HeroItem.Name, "Name:  " + (hero.Name.Length > 0 ? hero.Name : "(choose a name)")),
+                new Choice<HeroItem>(HeroItem.Culture, "Culture:  " + cultureName, hint: "Your hero starts at one of its towns."),
+                new Choice<HeroItem>(HeroItem.Gender, "Gender:  " + (hero.Female ? "Female" : "Male")),
+                new Choice<HeroItem>(HeroItem.Password, "Password:  " + (hero.Password.Length > 0 ? new string('*', hero.Password.Length) : "(choose a password)"),
+                    hint: "Anyone who wants to play this hero needs it."),
+            };
+            Action back = () => ShowNewHero(list, hero);
+            Dialogs.Choose("New hero", "Click a line to change it.", choices, item =>
+            {
+                switch (item)
                 {
-                    name = name.Trim();
-                    if (name.Length < 2 || name.Length > 32)
-                        return "2 to 32 characters.";
-                    if (name.IndexOf('|') >= 0)
-                        return "No | characters.";
-                    return list.Slots.Any(s => string.Equals(s.HeroName, name, StringComparison.OrdinalIgnoreCase)) ? "That name is taken." : null;
-                });
-        }
-
-        private static void AskCulture(SlotListMessage list, string name)
-        {
-            var choices = list.Cultures.Select(c => new Choice<string>(c.Id, c.Name)).ToList();
-            Dialogs.Choose("New hero", "Culture (your hero starts at one of its towns):", choices,
-                culture => AskGender(list, name, culture),
-                () => AskNewHeroName(list));
-        }
-
-        private static void AskGender(SlotListMessage list, string name, string culture)
-        {
-            var choices = new List<Choice<bool>> { new Choice<bool>(false, "Male"), new Choice<bool>(true, "Female") };
-            Dialogs.Choose("New hero", "", choices,
-                female => AskHeroPassword(list, name, culture, female),
-                () => AskCulture(list, name));
-        }
-
-        private static void AskHeroPassword(SlotListMessage list, string name, string culture, bool female)
-        {
-            Dialogs.Text("Hero password", $"Choose a password for {name}. Anyone who wants to play this hero needs it.",
-                password => Dialogs.Text("Hero password", "Type it again:",
-                    confirm => _connection?.CreateHero(name, culture, female, password),
-                    () => AskHeroPassword(list, name, culture, female),
-                    password: true,
-                    validate: confirm => confirm == password ? null : "Passwords do not match."),
-                () => AskGender(list, name, culture),
-                password: true,
-                validate: password => password.Length < 4 ? "At least 4 characters." : null);
+                    case HeroItem.Create:
+                        _connection?.CreateHero(hero.Name, hero.Culture, hero.Female, hero.Password);
+                        break;
+                    case HeroItem.Name:
+                        Dialogs.Text("Name", "Your hero's name:", name => { hero.Name = name.Trim(); back(); }, back, defaultText: hero.Name,
+                            validate: name =>
+                            {
+                                name = name.Trim();
+                                if (name.Length < 2 || name.Length > 32)
+                                    return "2 to 32 characters.";
+                                if (name.IndexOf('|') >= 0)
+                                    return "No | characters.";
+                                return list.Slots.Any(slot => string.Equals(slot.HeroName, name, StringComparison.OrdinalIgnoreCase)) ? "That name is taken." : null;
+                            });
+                        break;
+                    case HeroItem.Culture:
+                        Dialogs.Choose("Culture", "Your hero starts at one of its towns.", list.Cultures.Select(c => new Choice<string>(c.Id, c.Name)).ToList(),
+                            culture => { hero.Culture = culture; back(); }, back);
+                        break;
+                    case HeroItem.Gender:
+                        hero.Female = !hero.Female;
+                        back();
+                        break;
+                    case HeroItem.Password:
+                        Dialogs.Text("Password", "Choose a password (at least 4 characters):",
+                            password => Dialogs.Text("Password", "Type it again:",
+                                confirm => { hero.Password = password; back(); }, back, password: true,
+                                validate: confirm => confirm == password ? null : "Passwords do not match."),
+                            back, password: true,
+                            validate: password => password.Length < 4 ? "At least 4 characters." : null);
+                        break;
+                }
+            }, () => ShowSlots(list), "Select");
         }
 
         private static void OnWorldReceived(byte[] save, JoinAcceptedMessage accepted)
         {
+            var serverNameForMemory = _connection?.ServerName;
             Log.Info($"Join: world received ({save.Length} bytes) for {accepted.HeroName} ({accepted.HeroId})");
             var target = _connection?.Target;
             _connection = null;
@@ -270,6 +325,13 @@ namespace BannerlordMP.Ui
             }
 
             Log.Info("Join: world written as " + JoinSaveName + ", loading");
+            var serverName = serverNameForMemory;
+            if (target != null)
+            {
+                MenuMemory.Set("Join.LastTarget", Remember(target));
+                MenuMemory.Set("Join.LastServer", serverName ?? string.Empty);
+                MenuMemory.Set("Join.Hero." + (serverName ?? string.Empty), accepted.HeroName);
+            }
             PendingResume = new PendingResume { Target = target, Token = accepted.ResumeToken, HeroId = accepted.HeroId };
             Log.Notify($"World downloaded. Loading as {accepted.HeroName}...");
             if (!GameBridge.LoadSave(JoinSaveName, () => PendingResume = null))
