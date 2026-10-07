@@ -6,7 +6,9 @@ using BannerlordMP.Core.Protocol;
 using BannerlordMP.Core.Time;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.GameMenus;
 using TaleWorlds.CampaignSystem.GameState;
+using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
@@ -171,8 +173,42 @@ namespace BannerlordMP.Game
             return Campaign.Current.CampaignObjectManager.Find<Hero>(stringId);
         }
 
+        /// <summary>
+        /// Closes whatever the loaded world's main party was doing: an open town or encounter menu, a player
+        /// encounter, being inside a settlement. A downloaded world is a save of the server, so this is the
+        /// server's hero; its menu would otherwise stay open after we switch heroes, and "Leave town" then acts on
+        /// a party that was never in that town (crash).
+        /// </summary>
+        public static void CloseMainPartyActivity()
+        {
+            var main = MobileParty.MainParty;
+            try
+            {
+                if (PlayerEncounter.Current != null)
+                {
+                    Log.Info("Finishing the loaded world's player encounter");
+                    PlayerEncounter.Finish(true);
+                }
+                if (main?.CurrentSettlement != null)
+                {
+                    Log.Info($"Main party {main.StringId} leaves {main.CurrentSettlement.StringId}");
+                    LeaveSettlementAction.ApplyForParty(main);
+                }
+                for (var guard = 0; Campaign.Current?.CurrentMenuContext != null && guard < 10; guard++)
+                {
+                    Log.Info("Closing game menu " + Campaign.Current.CurrentMenuContext.GameMenu?.StringId);
+                    GameMenu.ExitToLast();
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not close the loaded world's menus", e);
+            }
+        }
+
         public static void TakeControlOf(Hero hero)
         {
+            CloseMainPartyActivity();
             if (Hero.MainHero != hero)
                 ChangePlayerCharacterAction.Apply(hero);
 
@@ -214,6 +250,9 @@ namespace BannerlordMP.Game
         /// <summary>Dedicated host: keep the server's own party still and out of every encounter.</summary>
         public static void ParkMainParty()
         {
+            // Out of any town and menu first: the world sent to players is saved from here, and they would load it
+            // with the server hero's menu open.
+            CloseMainPartyActivity();
             var main = MobileParty.MainParty;
             if (main == null)
                 return;
