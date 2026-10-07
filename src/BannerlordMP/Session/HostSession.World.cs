@@ -114,7 +114,7 @@ namespace BannerlordMP.Session
         {
             if (hero == null || !_playerGold.TryGetValue(hero.StringId, out var gold) || hero.Gold == gold)
                 return;
-            Log.Info($"Undid {hero.Gold - gold:+#;-#;0} gold the host's AI gave player hero {hero.StringId}");
+            Log.Info($"Undid a {hero.Gold - gold:+#;-#;0} gold change the host's AI made to player hero {hero.StringId} (the player's own game handles their money)");
             hero.Gold = gold;
         }
 

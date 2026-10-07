@@ -199,6 +199,19 @@ namespace BannerlordMP.Session
 
         private void OnMessage(int peer, INetMessage message)
         {
+            // A world update that fails to apply is logged and skipped; it must not end the session.
+            try
+            {
+                HandleMessage(message);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Error applying {message.Type} from the host; continuing", e);
+            }
+        }
+
+        private void HandleMessage(INetMessage message)
+        {
             switch (message)
             {
                 case AuthChallengeMessage _:

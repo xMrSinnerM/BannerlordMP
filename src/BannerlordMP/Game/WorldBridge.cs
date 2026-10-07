@@ -142,11 +142,35 @@ namespace BannerlordMP.Game
 
             foreach (var pair in troopChanges)
             {
-                var character = MBObjectManager.Instance.GetObject<CharacterObject>(pair.Key.Id);
-                if (character == null || character.IsHero)
-                    continue;
-                pair.Key.Roster.AddToCounts(character, pair.Value.Count, false, pair.Value.Wounded, 0, true, -1);
+                try
+                {
+                    ApplyTroopChange(pair.Key.Roster, pair.Key.Id, pair.Value.Count, pair.Value.Wounded);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Troop change {pair.Key.Id} ({pair.Value.Count:+#;-#;0}, wounded {pair.Value.Wounded:+#;-#;0}) failed", e);
+                }
             }
+        }
+
+        /// <summary>
+        /// Applies a troop count change, kept within what the roster can hold: the two sides' rosters can differ
+        /// slightly (troops healed or died on one side first), and the game throws on a count or wounded number
+        /// below zero, or more wounded than troops.
+        /// </summary>
+        private static void ApplyTroopChange(TroopRoster roster, string characterId, int countChange, int woundedChange)
+        {
+            var character = MBObjectManager.Instance.GetObject<CharacterObject>(characterId);
+            if (character == null || character.IsHero)
+                return;
+            var index = roster.FindIndexOfTroop(character);
+            var count = index >= 0 ? roster.GetElementNumber(index) : 0;
+            var wounded = index >= 0 ? roster.GetElementWoundedNumber(index) : 0;
+            var newCount = Math.Max(0, count + countChange);
+            var newWounded = Math.Max(0, Math.Min(newCount, wounded + woundedChange));
+            if (newCount == count && newWounded == wounded)
+                return;
+            roster.AddToCounts(character, newCount - count, false, newWounded - wounded, 0, true, -1);
         }
 
         private static void CaptureTroops(TroopRoster roster, string countPrefix, string woundedPrefix, Dictionary<string, int> ledger)

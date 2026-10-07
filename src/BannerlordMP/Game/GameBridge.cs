@@ -348,8 +348,10 @@ namespace BannerlordMP.Game
                 if (character == null || character.IsHero)
                     continue;
                 wanted.TryGetValue(character.StringId, out var goal);
-                var countChange = goal.Count - element.Number;
-                var woundedChange = goal.Wounded - element.WoundedNumber;
+                var goalCount = Math.Max(0, goal.Count);
+                var goalWounded = Math.Max(0, Math.Min(goalCount, goal.Wounded));
+                var countChange = goalCount - element.Number;
+                var woundedChange = goalWounded - element.WoundedNumber;
                 if (countChange != 0 || woundedChange != 0)
                     roster.AddToCounts(character, countChange, false, woundedChange, 0, true, -1);
                 wanted.Remove(character.StringId);
@@ -361,7 +363,7 @@ namespace BannerlordMP.Game
                 var character = MBObjectManager.Instance.GetObject<CharacterObject>(troop.CharacterId);
                 if (character == null || character.IsHero || troop.Count <= 0)
                     continue;
-                roster.AddToCounts(character, troop.Count, false, troop.Wounded, 0, true, -1);
+                roster.AddToCounts(character, troop.Count, false, Math.Max(0, Math.Min(troop.Count, troop.Wounded)), 0, true, -1);
             }
         }
 

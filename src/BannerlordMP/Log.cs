@@ -24,14 +24,29 @@ namespace BannerlordMP
 
         private static void Write(string level, string message)
         {
-            try
+            // Two game windows on one PC share this file (same Modules folder): open it shared, retry briefly,
+            // and tag each line with the side that wrote it.
+            var role = Session.MpSession.Current == null ? "" : Session.MpSession.Current.IsHost ? "[server] " : "[client] ";
+            var bytes = System.Text.Encoding.UTF8.GetBytes($"{DateTime.Now:HH:mm:ss.fff} {level} {role}{message}{Environment.NewLine}");
+            lock (Lock)
             {
-                lock (Lock)
-                    File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff} {level} {message}{Environment.NewLine}");
-            }
-            catch
-            {
-                // Logging must never take the game down.
+                for (var attempt = 0; attempt < 5; attempt++)
+                {
+                    try
+                    {
+                        using (var stream = new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+                            stream.Write(bytes, 0, bytes.Length);
+                        return;
+                    }
+                    catch (IOException)
+                    {
+                        System.Threading.Thread.Sleep(2);
+                    }
+                    catch
+                    {
+                        return; // Logging must never take the game down.
+                    }
+                }
             }
         }
     }

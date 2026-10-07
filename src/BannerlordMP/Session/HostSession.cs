@@ -327,6 +327,22 @@ namespace BannerlordMP.Session
 
         private void OnMessage(int peer, INetMessage message)
         {
+            // One bad message (a game call throwing on odd data) must not shut the server down for everyone.
+            try
+            {
+                HandleMessage(peer, message);
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Error handling {message.Type} from {NameOfPeer(peer)}; continuing", e);
+            }
+        }
+
+        private string NameOfPeer(int peer) =>
+            _peers.TryGetValue(peer, out var state) && state.PlayerId >= 0 ? NameOf(state.PlayerId) : "peer " + peer;
+
+        private void HandleMessage(int peer, INetMessage message)
+        {
             if (!_peers.TryGetValue(peer, out var state))
                 return;
 
