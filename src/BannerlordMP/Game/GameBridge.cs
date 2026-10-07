@@ -231,8 +231,14 @@ namespace BannerlordMP.Game
             if (main == null)
                 return;
             main.IgnoreByOtherPartiesTill(CampaignTime.Now);
+            // As single player sets up the player's party: AI machinery on (movement runs through it), but it
+            // never makes decisions of its own. Fully enabled AI let the party act by itself, e.g. when leaving town.
             main.Ai.EnableAi();
-            main.SetMoveModeHold();
+            main.Ai.SetDoNotMakeNewDecisions(true);
+            if (main.CurrentSettlement == null && main.MapEvent == null)
+                main.SetMoveModeHold();
+            Log.Info($"Own party released: in settlement {main.CurrentSettlement?.StringId ?? "none"}, AI disabled {main.Ai.IsDisabled}, " +
+                     $"no own decisions {main.Ai.DoNotMakeNewDecisions}, behavior {main.DefaultBehavior}");
         }
 
         /// <summary>Dedicated host: undo any move order the game gave the parked party (map clicks, menus).</summary>
