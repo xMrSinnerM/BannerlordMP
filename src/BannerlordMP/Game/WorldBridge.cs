@@ -355,15 +355,28 @@ namespace BannerlordMP.Game
                         {
                             var settlement = Find<Settlement>(message.A);
                             var besieger = GameBridge.FindParty(message.B);
-                            if (settlement != null && besieger != null && besieger.IsActive && settlement.SiegeEvent == null)
+                            if (settlement == null || besieger == null || !besieger.IsActive)
+                                break;
+                            if (settlement.SiegeEvent == null)
                                 Campaign.Current.SiegeEventManager.StartSiegeEvent(settlement, besieger);
+                            // The besieger here is a stand-in that holds still (the network moves it). A siege whose
+                            // leader is not set to besiege is lifted at once, which kicked players out of their sieges.
+                            if (besieger != MobileParty.MainParty)
+                                besieger.SetMoveBesiegeSettlement(settlement, MobileParty.NavigationType.Default);
                             break;
                         }
                         case WorldEventKind.SiegeEnded:
                         {
                             var siege = Find<Settlement>(message.A)?.SiegeEvent;
-                            if (siege != null && !siege.ReadyToBeRemoved)
-                                siege.FinalizeSiegeEvent();
+                            if (siege == null || siege.ReadyToBeRemoved)
+                                break;
+                            // A player's own siege is theirs: only they end it (lift, break, take the town).
+                            if (siege.BesiegerCamp?.LeaderParty == MobileParty.MainParty && Session.MpSession.Current is Session.ClientSession)
+                            {
+                                Log.Info("Ignoring siege end for our own siege of " + message.A);
+                                break;
+                            }
+                            siege.FinalizeSiegeEvent();
                             break;
                         }
                         case WorldEventKind.HeroKilled:
