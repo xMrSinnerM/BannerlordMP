@@ -29,6 +29,9 @@ namespace BannerlordMP.Core.Tests
             Troops = new List<TroopCount> { new TroopCount("vlandian_recruit", 5, 0) },
             Level = 2,
             Perks = new List<string> { "OneHandedWrappedHandles" },
+            Inventory = new Dictionary<string, int> { { "grain|", 2 } },
+            ClanRenown = 0,
+            ClanInfluence = 0,
         };
 
         [Fact]
@@ -46,6 +49,7 @@ namespace BannerlordMP.Core.Tests
             Assert.Equal("11.4.4.1528.1528.764.764.1.0.0", sheet.BannerCode);
             Assert.Equal(2, sheet.Level);
             Assert.Equal("OneHandedWrappedHandles", sheet.Perks.Single());
+            Assert.Equal(2, sheet.Inventory["grain|"]);
         }
 
         [Fact]
@@ -73,6 +77,9 @@ namespace BannerlordMP.Core.Tests
             sheet.Gold = 1_000_000;
             sheet.Age = 5;
             sheet.Level = 40;
+            sheet.ClanRenown = 900;
+            sheet.ClanInfluence = -5;
+            sheet.Inventory = new Dictionary<string, int> { { "grain|", 80 }, { "wine|", 80 } };
             sheet.Troops = new List<TroopCount> { new TroopCount("a", 50, 60), new TroopCount("b", 50, 0) };
 
             var changes = HeroSheetRules.Clamp(sheet);
@@ -83,6 +90,9 @@ namespace BannerlordMP.Core.Tests
             Assert.Equal(HeroSheetRules.MaxStartingGold, sheet.Gold);
             Assert.Equal(HeroSheetRules.MinAge, sheet.Age);
             Assert.Equal(HeroSheetRules.MaxStartingLevel, sheet.Level);
+            Assert.Equal(HeroSheetRules.MaxStartingRenown, sheet.ClanRenown);
+            Assert.Equal(0, sheet.ClanInfluence);
+            Assert.Equal(HeroSheetRules.MaxStartingItems, sheet.Inventory.Values.Sum());
             Assert.Equal(HeroSheetRules.MaxStartingTroops, sheet.Troops.Sum(t => t.Count));
             Assert.All(sheet.Troops, t => Assert.True(t.Wounded <= t.Count));
         }

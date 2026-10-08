@@ -478,9 +478,7 @@ namespace BannerlordMP.Session
             Hero hero;
             try
             {
-                hero = GameBridge.CreatePlayerHero(name, create.CultureId, create.IsFemale);
-                if (sheet != null)
-                    HeroSheetBridge.Apply(hero, sheet);
+                hero = GameBridge.CreatePlayerHero(name, create.CultureId, create.IsFemale, sheet);
             }
             catch (Exception e)
             {
@@ -532,11 +530,8 @@ namespace BannerlordMP.Session
                 : slot.CultureId;
             try
             {
-                var hero = GameBridge.CreatePlayerHero(slot.HeroName, cultureId ?? GameBridge.PlayableCultures().First().Id, slot.IsFemale);
                 // Made in the character creator: rebuild the same face, background and starting gear.
-                var sheet = ReadSheet(slot);
-                if (sheet != null)
-                    HeroSheetBridge.Apply(hero, sheet);
+                var hero = GameBridge.CreatePlayerHero(slot.HeroName, cultureId ?? GameBridge.PlayableCultures().First().Id, slot.IsFemale, ReadSheet(slot));
                 GameBridge.Freeze(hero.PartyBelongedTo);
                 RememberPlayerGold(hero);
                 Log.Notify($"{slot.HeroName} was not in this world; recreated them (slot {slot.SlotId}).");

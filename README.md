@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.16, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.17, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -51,9 +51,10 @@ connects straight away. Enter the server password if it has one, then:
     campaign: culture, face and body, background and upbringing (skills, attributes, focus, traits),
     age, banner and clan name. When you confirm the last screen, that local campaign is closed again
     without saving, you rejoin the server automatically, and you choose your hero's password. The server
-    builds the same hero in its world, with the gear, gold and troops creation gave you.
-  - **Quick create**: one screen for name, culture, gender and password. The hero gets a random face
-    from their culture, 20 troops and 5000 gold.
+    builds the same hero in its world and starts it exactly like a new single-player game: the gear,
+    gold, food and troops creation gave you, and nothing more.
+  - **Quick create**: one screen for name, culture, gender and password. A plain start: random face
+    from their culture, attributes 2, a recruit's skills and gear, 1000 gold, a little food, no troops.
 
   Either way the hero gets their own clan and a party near a town of their culture.
 
@@ -139,8 +140,8 @@ happens.
   Steam callbacks to mods. That's untested; LAN and direct IP don't depend on it.
 - **Character creator heroes** start near a town of their culture, not where single player would start
   them. The server keeps their values within what creation can give (attributes up to 10, skills up to
-  150, focus up to 5, gold up to 20000, 60 troops of tier 3 or lower, no item worth more than 15000), so a
-  modified client can't send a maxed-out hero.
+  150, focus up to 5, gold up to 5000, 20 troops of tier 3 or lower, 100 inventory items, no item worth
+  more than 10000, renown up to 100), so a modified client can't send a rich or maxed-out hero.
   A player whose hero is captured, or has lost their party, can't join until that's handled.
 - **The host in a battle** pauses the world for everyone, unless you use a dedicated host. The dedicated
   host still needs a full game window; a headless server is not possible yet.

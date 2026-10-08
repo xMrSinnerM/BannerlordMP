@@ -19,7 +19,11 @@ namespace BannerlordMP.Game
     internal static class HeroSheetBridge
     {
         /// <summary>Starting gear is cheap; this keeps a modified client from sending endgame armour.</summary>
-        private const int MaxStartingItemValue = 15000;
+        private const int MaxStartingItemValue = 10000;
+        /// <summary>Quick create: a plain start, about what a new single-player character has.</summary>
+        private const int BasicStartGold = 1000;
+        private const int BasicStartAttribute = 2;
+        private const int BasicStartGrain = 5;
         /// <summary>Starting troops are recruits; no knights from the character creator.</summary>
         private const int MaxStartingTroopTier = 3;
 
@@ -40,6 +44,8 @@ namespace BannerlordMP.Game
                 UnspentAttributePoints = hero.HeroDeveloper.UnspentAttributePoints,
                 UnspentFocusPoints = hero.HeroDeveloper.UnspentFocusPoints,
                 Level = hero.Level,
+                ClanRenown = Clan.PlayerClan?.Renown ?? 0f,
+                ClanInfluence = Clan.PlayerClan?.Influence ?? 0f,
             };
             foreach (var attribute in Attributes.All)
                 sheet.Attributes[attribute.StringId] = hero.GetAttributeValue(attribute);
@@ -68,6 +74,16 @@ namespace BannerlordMP.Game
             var party = MobileParty.MainParty;
             if (party != null)
             {
+                for (var i = 0; i < party.ItemRoster.Count; i++)
+                {
+                    var element = party.ItemRoster.GetElementCopyAtIndex(i);
+                    var item = element.EquipmentElement.Item;
+                    if (item == null || element.Amount <= 0)
+                        continue;
+                    var key = item.StringId + "|" + (element.EquipmentElement.ItemModifier?.StringId ?? string.Empty);
+                    sheet.Inventory.TryGetValue(key, out var amount);
+                    sheet.Inventory[key] = amount + element.Amount;
+                }
                 foreach (var element in party.MemberRoster.GetTroopRoster())
                 {
                     if (element.Character != null && !element.Character.IsHero && element.Number > 0)
@@ -80,18 +96,6 @@ namespace BannerlordMP.Game
         /// <summary>Server: make a freshly created player hero match the sheet (already clamped to sane limits).</summary>
         public static void Apply(Hero hero, HeroSheet sheet)
         {
-            void Step(string what, Action action)
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception e)
-                {
-                    Log.Error($"Applying character sheet ({what}) failed", e);
-                }
-            }
-
             Step("name", () =>
             {
                 var name = new TextObject(sheet.Name);
@@ -186,6 +190,28 @@ namespace BannerlordMP.Game
                 }
             });
             Step("gold", () => hero.Gold = sheet.Gold);
+            Step("inventory", () =>
+            {
+                var party = hero.PartyBelongedTo;
+                if (party == null)
+                    return;
+                party.ItemRoster.Clear();
+                foreach (var pair in sheet.Inventory)
+                {
+                    var element = ParseItem(pair.Key);
+                    if (element.IsEmpty)
+                        Log.Info($"Character sheet: skipped inventory item {pair.Key}");
+                    else
+                        party.ItemRoster.AddToCounts(element, pair.Value);
+                }
+            });
+            Step("clan standing", () =>
+            {
+                if (hero.Clan == null)
+                    return;
+                hero.Clan.Renown = sheet.ClanRenown;
+                hero.Clan.Influence = sheet.ClanInfluence;
+            });
             Step("troops", () =>
             {
                 var party = hero.PartyBelongedTo;
@@ -218,26 +244,103 @@ namespace BannerlordMP.Game
 
         private static void ApplyEquipment(Equipment equipment, List<string> slots)
         {
-            for (var i = 0; i < Equipment.EquipmentSlotLength && i < slots.Count; i++)
+            for (var i = 0; i < Equipment.EquipmentSlotLength; i++)
             {
-                var entry = slots[i] ?? string.Empty;
-                if (entry.Length == 0)
-                {
-                    equipment[i] = EquipmentElement.Invalid;
-                    continue;
-                }
-                var bar = entry.IndexOf('|');
-                var item = MBObjectManager.Instance.GetObject<ItemObject>(bar < 0 ? entry : entry.Substring(0, bar));
-                if (item == null || item.Value > MaxStartingItemValue)
-                {
-                    // Empty rather than whatever the server's lord template wore in that slot.
+                var entry = i < slots.Count ? slots[i] ?? string.Empty : string.Empty;
+                // Unknown or too valuable: empty rather than whatever the server's lord template wore there.
+                var element = ParseItem(entry);
+                if (element.IsEmpty && entry.Length > 0)
                     Log.Info($"Character sheet: skipped starting item {entry}");
-                    equipment[i] = EquipmentElement.Invalid;
-                    continue;
+                equipment[i] = element;
+            }
+        }
+
+        /// <summary>"itemId|modifierId" to an item, or <see cref="EquipmentElement.Invalid"/> if unknown or too valuable to start with.</summary>
+        private static EquipmentElement ParseItem(string entry)
+        {
+            if (string.IsNullOrEmpty(entry))
+                return EquipmentElement.Invalid;
+            var bar = entry.IndexOf('|');
+            var item = MBObjectManager.Instance.GetObject<ItemObject>(bar < 0 ? entry : entry.Substring(0, bar));
+            if (item == null || item.Value > MaxStartingItemValue)
+                return EquipmentElement.Invalid;
+            var modifierId = bar < 0 ? string.Empty : entry.Substring(bar + 1);
+            var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
+            return new EquipmentElement(item, modifier, null, false);
+        }
+
+        /// <summary>
+        /// Quick create (no character creator): a plain new character instead of the AI lord the hero was built
+        /// from. Attributes 2, a recruit's skills and gear, no focus, perks or traits, 1000 gold, a little food.
+        /// </summary>
+        public static void ApplyBasicStart(Hero hero)
+        {
+            var recruit = hero.Culture?.BasicTroop;
+            Step("attributes", () =>
+            {
+                foreach (var attribute in Attributes.All)
+                {
+                    var change = BasicStartAttribute - hero.GetAttributeValue(attribute);
+                    if (change > 0)
+                        hero.HeroDeveloper.AddAttribute(attribute, change, false);
+                    else if (change < 0)
+                        hero.HeroDeveloper.RemoveAttribute(attribute, -change);
                 }
-                var modifierId = bar < 0 ? string.Empty : entry.Substring(bar + 1);
-                var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
-                equipment[i] = new EquipmentElement(item, modifier, null, false);
+            });
+            Step("skills", () =>
+            {
+                foreach (var skill in Skills.All)
+                    hero.HeroDeveloper.SetInitialSkillLevel(skill, recruit?.GetSkillValue(skill) ?? 0);
+            });
+            Step("level", () => hero.HeroDeveloper.SetInitialLevel(1));
+            Step("perks", () => hero.ClearPerks());
+            Step("focus", () =>
+            {
+                foreach (var skill in Skills.All)
+                {
+                    var focus = hero.HeroDeveloper.GetFocus(skill);
+                    if (focus > 0)
+                        hero.HeroDeveloper.RemoveFocus(skill, focus);
+                }
+                hero.HeroDeveloper.UnspentAttributePoints = 0;
+                hero.HeroDeveloper.UnspentFocusPoints = 0;
+            });
+            Step("traits", () =>
+            {
+                foreach (var trait in DefaultTraits.Personality)
+                    hero.SetTraitLevel(trait, 0);
+            });
+            Step("equipment", () =>
+            {
+                var battle = recruit?.FirstBattleEquipment;
+                var civilian = recruit?.FirstCivilianEquipment;
+                for (var i = 0; i < Equipment.EquipmentSlotLength; i++)
+                {
+                    hero.BattleEquipment[i] = battle?[i] ?? EquipmentElement.Invalid;
+                    // Recruits often have no civilian set: then the battle armour without the weapons.
+                    hero.CivilianEquipment[i] = civilian != null ? civilian[i]
+                        : i >= (int)EquipmentIndex.NumAllWeaponSlots && battle != null ? battle[i] : EquipmentElement.Invalid;
+                }
+            });
+            Step("gold", () => hero.Gold = BasicStartGold);
+            Step("food", () =>
+            {
+                var grain = MBObjectManager.Instance.GetObject<ItemObject>("grain");
+                if (grain != null && hero.PartyBelongedTo != null)
+                    hero.PartyBelongedTo.ItemRoster.AddToCounts(grain, BasicStartGrain);
+            });
+            Log.Info($"Gave {hero.StringId} a basic start (quick create)");
+        }
+
+        private static void Step(string what, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Setting up the new hero ({what}) failed", e);
             }
         }
     }

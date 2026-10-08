@@ -379,10 +379,11 @@ namespace BannerlordMP.Game
         public static string CultureName(Hero hero) => hero?.Culture?.Name?.ToString() ?? string.Empty;
 
         /// <summary>
-        /// Creates a new lord for a player: their own independent clan, a party at a town of their culture, starting
-        /// troops and gold. Mirrors what a fresh sandbox start gives, without the character creation screens.
+        /// Creates a new hero for a player: their own independent clan and a party at a town of their culture,
+        /// starting like a new single-player game. With a sheet from the character creator, the hero is exactly
+        /// the one the player made; without one (quick create), a plain start (<see cref="HeroSheetBridge.ApplyBasicStart"/>).
         /// </summary>
-        public static Hero CreatePlayerHero(string name, string cultureId, bool isFemale)
+        public static Hero CreatePlayerHero(string name, string cultureId, bool isFemale, HeroSheet sheet = null)
         {
             var culture = MBObjectManager.Instance.GetObject<CultureObject>(cultureId);
             if (culture == null || !culture.IsMainCulture)
@@ -426,9 +427,19 @@ namespace BannerlordMP.Game
             if (party.CurrentSettlement != null)
                 LeaveSettlementAction.ApplyForParty(party);
 
-            if (culture.BasicTroop != null)
-                party.MemberRoster.AddToCounts(culture.BasicTroop, 20, false, 0, 0, true, -1);
-            hero.Gold = 5000;
+            // The hero is built from an AI lord template, and a lord party comes with a full roster, food and
+            // spending money. A new single-player character has none of that: start from nothing.
+            ApplyRoster(party.MemberRoster, new List<TroopCount>());
+            ApplyRoster(party.PrisonRoster, new List<TroopCount>());
+            party.ItemRoster.Clear();
+            hero.Gold = 0;
+            clan.Renown = 0f;
+            clan.Influence = 0f;
+
+            if (sheet != null)
+                HeroSheetBridge.Apply(hero, sheet);
+            else
+                HeroSheetBridge.ApplyBasicStart(hero);
             Log.Info($"Created player hero {hero.StringId} ({name}, {culture.StringId}) in clan {clan.StringId} near {settlement.StringId}");
             return hero;
         }

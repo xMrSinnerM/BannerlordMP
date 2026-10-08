@@ -292,7 +292,7 @@ namespace BannerlordMP.Ui
                 choices.Add(new Choice<CreateWay>(CreateWay.MadeHero, $">>  {made.Name}  <<   (made in the character creator)", hint: "Join as the hero you just made."));
             choices.Add(new Choice<CreateWay>(CreateWay.Creator, "Character creator (like single player)",
                 hint: "Every creation screen from a new campaign: culture, face, background, skills, banner, clan name. You rejoin automatically afterwards."));
-            choices.Add(new Choice<CreateWay>(CreateWay.Quick, "Quick create", hint: "Just a name, culture and gender. The server picks the rest."));
+            choices.Add(new Choice<CreateWay>(CreateWay.Quick, "Quick create", hint: "Just a name, culture and gender. A plain start: recruit gear, 1000 gold, no troops."));
             Dialogs.Choose("New hero", "How do you want to make your hero?", choices, way =>
             {
                 switch (way)

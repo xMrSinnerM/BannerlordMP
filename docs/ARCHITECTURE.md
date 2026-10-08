@@ -37,9 +37,11 @@ On the map
   Sandbox new-game button and lets the player go through every creation screen. A second after the map
   opens it copies the main hero into a `HeroSheet` (`Game/HeroSheetBridge`: name, clan name, banner,
   culture, gender, age, body properties, attributes, skills, focus, traits, level, perks, both equipment
-  sets, gold, troops), ends that campaign (saving is blocked while it runs) and reconnects with the same
+  sets, gold, troops, party inventory, clan renown and influence), ends that campaign (saving is blocked while it runs) and reconnects with the same
   server password. The sheet rides along with `CreateHero`; the server clamps it (`HeroSheetRules`),
-  creates the hero as usual and then applies the sheet. The slot keeps the sheet, so a hero the server
+  creates the hero from a lord template, strips what the template brings (lord party roster, food, gold,
+  renown) and then applies the sheet, so the hero starts like a new single-player game. Quick create
+  applies a plain basic start instead. The slot keeps the sheet, so a hero the server
   lost is rebuilt the same way.
 - **Transports** (`Net/`): `NetTransport` (LiteNetLib UDP, which also answers LAN discovery broadcasts)
   and `SteamTransport` (Steam Networking Sockets over Valve's relay). The server listens on both

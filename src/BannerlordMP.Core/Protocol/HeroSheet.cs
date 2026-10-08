@@ -30,6 +30,10 @@ namespace BannerlordMP.Core.Protocol
         public List<string> CivilianEquipment = new List<string>();
         public List<TroopCount> Troops = new List<TroopCount>();
         public List<string> Perks = new List<string>();
+        /// <summary>The party's starting inventory (food and the like): "itemId|modifierId" to amount.</summary>
+        public Dictionary<string, int> Inventory = new Dictionary<string, int>();
+        public float ClanRenown;
+        public float ClanInfluence;
 
         /// <summary>For keeping the sheet with the player's slot, so a lost hero can be rebuilt the same way.</summary>
         public byte[] ToBytes()
@@ -69,11 +73,14 @@ namespace BannerlordMP.Core.Protocol
             w.WriteList(CivilianEquipment, (bw, s) => bw.WriteNullable(s));
             w.WriteList(Troops, (bw, t) => t.Write(bw));
             w.WriteList(Perks, (bw, s) => bw.WriteNullable(s));
+            w.WriteCounters(Inventory);
+            w.Write(ClanRenown);
+            w.Write(ClanInfluence);
         }
 
         internal static HeroSheet Read(BinaryReader r)
         {
-            return new HeroSheet
+            var sheet = new HeroSheet
             {
                 Name = r.ReadString(),
                 ClanName = r.ReadString(),
@@ -95,6 +102,10 @@ namespace BannerlordMP.Core.Protocol
                 Troops = r.ReadList(TroopCount.Read),
                 Perks = r.ReadList(br => br.ReadString()),
             };
+            sheet.Inventory = r.ReadCounters();
+            sheet.ClanRenown = r.ReadSingle();
+            sheet.ClanInfluence = r.ReadSingle();
+            return sheet;
         }
     }
 }

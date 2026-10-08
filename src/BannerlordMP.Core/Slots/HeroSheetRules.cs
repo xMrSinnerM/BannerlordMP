@@ -7,15 +7,19 @@ namespace BannerlordMP.Core.Slots
 {
     /// <summary>
     /// Keeps a character from a player's machine within what single-player character creation can produce,
-    /// so a modified client cannot send a hero with maxed-out skills. Friends' servers, so the limits are generous.
+    /// so a modified client cannot send a hero with maxed-out skills or a rich start. The limits sit just above
+    /// what any single-player background gives.
     /// </summary>
     public static class HeroSheetRules
     {
         public const int MaxAttribute = 10;
         public const int MaxFocusPerSkill = 5;
         public const int MaxStartingSkill = 150;
-        public const int MaxStartingGold = 20000;
-        public const int MaxStartingTroops = 60;
+        public const int MaxStartingGold = 5000;
+        public const int MaxStartingTroops = 20;
+        public const int MaxStartingItems = 100;
+        public const float MaxStartingRenown = 100f;
+        public const float MaxStartingInfluence = 50f;
         public const int MaxTrait = 2;
         public const int MaxStartingLevel = 10;
         public const int MaxStartingPerks = 20;
@@ -41,6 +45,22 @@ namespace BannerlordMP.Core.Slots
                 perks = perks.Take(MaxStartingPerks).ToList();
             }
             sheet.Perks = perks;
+            sheet.ClanRenown = ClampValue(sheet.ClanRenown, 0f, MaxStartingRenown, "clan renown", changes);
+            sheet.ClanInfluence = ClampValue(sheet.ClanInfluence, 0f, MaxStartingInfluence, "clan influence", changes);
+
+            var items = 0;
+            var inventory = new Dictionary<string, int>();
+            foreach (var pair in sheet.Inventory.Where(p => !string.IsNullOrEmpty(p.Key) && p.Value > 0))
+            {
+                var amount = Math.Min(pair.Value, MaxStartingItems - items);
+                if (amount <= 0)
+                    break;
+                inventory[pair.Key] = amount;
+                items += amount;
+            }
+            if (inventory.Values.Sum() != sheet.Inventory.Values.Where(v => v > 0).Sum())
+                changes.Add($"inventory capped at {MaxStartingItems} items");
+            sheet.Inventory = inventory;
             ClampAll(sheet.Attributes, 1, MaxAttribute, "attribute", changes);
             ClampAll(sheet.Skills, 0, MaxStartingSkill, "skill", changes);
             ClampAll(sheet.Focus, 0, MaxFocusPerSkill, "focus", changes);
