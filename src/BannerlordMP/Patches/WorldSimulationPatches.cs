@@ -38,10 +38,13 @@ namespace BannerlordMP.Patches
         [HarmonyPrefix]
         private static bool Weekly() => RunLocally();
 
-        /// <summary>A joined player's world is a mirror; the server saves the real one. No autosaves here.</summary>
+        /// <summary>
+        /// A joined player's world is a mirror; the server saves the real one. No autosaves here, and none of the
+        /// throwaway campaign the character creator runs in either.
+        /// </summary>
         [HarmonyPatch(typeof(SaveHandler), "TryAutoSave")]
         [HarmonyPrefix]
-        private static bool AutoSave() => RunLocally();
+        private static bool AutoSave() => RunLocally() && !Ui.CharacterCreator.Active;
 
         [HarmonyPatch(typeof(Campaign), nameof(Campaign.LateAITick))]
         [HarmonyPrefix]

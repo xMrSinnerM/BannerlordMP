@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Game;
 using BannerlordMP.Steam;
-using TaleWorlds.MountAndBlade;
 
 namespace BannerlordMP.Ui
 {
@@ -143,7 +142,11 @@ namespace BannerlordMP.Ui
             PendingHost = config;
             if (world == NewCampaign)
             {
-                StartNewSandbox();
+                if (!GameBridge.StartNewSandbox())
+                {
+                    PendingHost = null;
+                    Dialogs.Message("Host Co-op Campaign", "Could not find the Sandbox new game option. Start a new sandbox campaign normally, then type mp.host in the console (Alt + ~).");
+                }
             }
             else if (!GameBridge.LoadSave(world, () => PendingHost = null))
             {
@@ -178,21 +181,6 @@ namespace BannerlordMP.Ui
                 default:
                     return "LAN and IP address only";
             }
-        }
-
-        private static void StartNewSandbox()
-        {
-            // Use the game's own "Sandbox" new-game button so character creation runs as normal.
-            var option = Module.CurrentModule.GetInitialStateOptions().FirstOrDefault(o =>
-                o.Id.IndexOf("sandbox", StringComparison.OrdinalIgnoreCase) >= 0 && o.Id.IndexOf("new", StringComparison.OrdinalIgnoreCase) >= 0);
-            if (option == null)
-            {
-                PendingHost = null;
-                Log.Info("Initial state options: " + string.Join(", ", Module.CurrentModule.GetInitialStateOptions().Select(o => o.Id)));
-                Dialogs.Message("Host Co-op Campaign", "Could not find the Sandbox new game option. Start a new sandbox campaign normally, then type mp.host in the console (Alt + ~).");
-                return;
-            }
-            option.DoAction();
         }
     }
 }

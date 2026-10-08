@@ -25,6 +25,7 @@ namespace BannerlordMP.Game
                 World(WorldEventKind.SiegeStarted, siege?.BesiegedSettlement?.StringId, siege?.BesiegerCamp?.LeaderParty?.StringId));
             CampaignEvents.OnSiegeEventEndedEvent.AddNonSerializedListener(this, siege =>
                 World(WorldEventKind.SiegeEnded, siege?.BesiegedSettlement?.StringId, string.Empty));
+            CampaignEvents.OnCharacterCreationIsOverEvent.AddNonSerializedListener(this, Ui.CharacterCreator.OnCreationOver);
             CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
                 World(WorldEventKind.HeroKilled, victim?.StringId, killer?.StringId ?? string.Empty));
         }

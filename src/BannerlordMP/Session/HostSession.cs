@@ -463,10 +463,24 @@ namespace BannerlordMP.Session
                 return;
             }
 
+            // A hero from the single-player character creator: keep it within what creation can give.
+            var sheet = create.Sheet;
+            if (sheet != null)
+            {
+                sheet.Name = name;
+                sheet.CultureId = create.CultureId;
+                sheet.IsFemale = create.IsFemale;
+                var changes = HeroSheetRules.Clamp(sheet);
+                if (changes.Count > 0)
+                    Log.Info($"Character {name} (peer {peer}) adjusted: {string.Join(", ", changes)}");
+            }
+
             Hero hero;
             try
             {
                 hero = GameBridge.CreatePlayerHero(name, create.CultureId, create.IsFemale);
+                if (sheet != null)
+                    HeroSheetBridge.Apply(hero, sheet);
             }
             catch (Exception e)
             {
@@ -477,11 +491,29 @@ namespace BannerlordMP.Session
 
             GameBridge.Freeze(hero.PartyBelongedTo);
             RememberPlayerGold(hero);
-            var slot = _slots.Add(hero.StringId, name, GameBridge.CultureName(hero), create.Salt, create.Key, create.CultureId, create.IsFemale);
+            var slot = _slots.Add(hero.StringId, name, GameBridge.CultureName(hero), create.Salt, create.Key, create.CultureId, create.IsFemale, sheet?.ToBytes());
             SaveSlots();
             UpdateLobby();
             Log.Notify($"New player hero {name} created (slot {slot.SlotId}).");
             QueueJoin(state, slot);
+        }
+
+        private static HeroSheet ReadSheet(PlayerSlot slot)
+        {
+            if (slot.Sheet == null || slot.Sheet.Length == 0)
+                return null;
+            try
+            {
+                var sheet = HeroSheet.FromBytes(slot.Sheet);
+                sheet.Name = slot.HeroName;
+                HeroSheetRules.Clamp(sheet);
+                return sheet;
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Slot {slot.SlotId}: stored character unreadable, recreating without it", e);
+                return null;
+            }
         }
 
         /// <summary>
@@ -501,6 +533,10 @@ namespace BannerlordMP.Session
             try
             {
                 var hero = GameBridge.CreatePlayerHero(slot.HeroName, cultureId ?? GameBridge.PlayableCultures().First().Id, slot.IsFemale);
+                // Made in the character creator: rebuild the same face, background and starting gear.
+                var sheet = ReadSheet(slot);
+                if (sheet != null)
+                    HeroSheetBridge.Apply(hero, sheet);
                 GameBridge.Freeze(hero.PartyBelongedTo);
                 RememberPlayerGold(hero);
                 Log.Notify($"{slot.HeroName} was not in this world; recreated them (slot {slot.SlotId}).");

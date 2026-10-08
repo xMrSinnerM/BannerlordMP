@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.15, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.16, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -46,8 +46,16 @@ Steam, you're offered the invite dialog once the server is up.
 servers, public Steam servers, LAN servers, and **Direct connect** for an IP address. Accepting a Steam invite
 connects straight away. Enter the server password if it has one, then:
 - **Your hero** (your last one is listed first): enter its password and play.
-- **Create a new hero**: one screen for name, culture, gender and password, then **Create hero**. A new
-  hero gets their own clan, a party near a town of their culture, 20 troops and 5000 gold.
+- **Create a new hero**, two ways:
+  - **Character creator (like single player)**: the game's own creation screens from a new sandbox
+    campaign: culture, face and body, background and upbringing (skills, attributes, focus, traits),
+    age, banner and clan name. When you confirm the last screen, that local campaign is closed again
+    without saving, you rejoin the server automatically, and you choose your hero's password. The server
+    builds the same hero in its world, with the gear, gold and troops creation gave you.
+  - **Quick create**: one screen for name, culture, gender and password. The hero gets a random face
+    from their culture, 20 troops and 5000 gold.
+
+  Either way the hero gets their own clan and a party near a town of their culture.
 
 Your game then downloads the server's current world, loads it, and puts you in control of your hero.
 
@@ -129,8 +137,11 @@ happens.
   (regular troops are).
 - **Steam features** (relay, lobbies, invites) depend on the game's own Steam integration delivering
   Steam callbacks to mods. That's untested; LAN and direct IP don't depend on it.
-- **New heroes** use a random face from their culture's templates; there's no face editor yet. A
-  player whose hero is captured, or has lost their party, can't join until that's handled.
+- **Character creator heroes** start near a town of their culture, not where single player would start
+  them. The server keeps their values within what creation can give (attributes up to 10, skills up to
+  150, focus up to 5, gold up to 20000, 60 troops of tier 3 or lower, no item worth more than 15000), so a
+  modified client can't send a maxed-out hero.
+  A player whose hero is captured, or has lost their party, can't join until that's handled.
 - **The host in a battle** pauses the world for everyone, unless you use a dedicated host. The dedicated
   host still needs a full game window; a headless server is not possible yet.
 - **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins, and a

@@ -459,6 +459,24 @@ namespace BannerlordMP.Game
                 throw new System.IO.IOException($"Could not write {saveName}: {result} {Common.PlatformFileHelper.GetError()}");
         }
 
+        /// <summary>
+        /// Presses the game's own "Sandbox" new-game button, so character creation runs exactly as in single player.
+        /// False if the button could not be found.
+        /// </summary>
+        public static bool StartNewSandbox()
+        {
+            var options = TaleWorlds.MountAndBlade.Module.CurrentModule.GetInitialStateOptions().ToList();
+            var option = options.FirstOrDefault(o =>
+                o.Id.IndexOf("sandbox", StringComparison.OrdinalIgnoreCase) >= 0 && o.Id.IndexOf("new", StringComparison.OrdinalIgnoreCase) >= 0);
+            if (option == null)
+            {
+                Log.Info("Initial state options: " + string.Join(", ", options.Select(o => o.Id)));
+                return false;
+            }
+            option.DoAction();
+            return true;
+        }
+
         /// <summary>Loads a save from the main menu, going through the game's usual module-compatibility checks.</summary>
         public static bool LoadSave(string saveName, Action onCancel)
         {

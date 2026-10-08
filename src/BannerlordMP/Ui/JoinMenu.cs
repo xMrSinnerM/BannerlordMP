@@ -34,6 +34,14 @@ namespace BannerlordMP.Ui
         private static ConnectTarget _pendingInvite;
         private static readonly SlotInfo CreateNewHero = new SlotInfo { SlotId = -1 };
 
+        /// <summary>A hero made in the character creator, waiting to be sent to the server it was made for.</summary>
+        private static HeroSheet _madeHero;
+        private static string _madeHeroServer;
+        /// <summary>Set right after the creator returns, so the slot screen goes straight to the made hero.</summary>
+        private static bool _offerMadeHero;
+        /// <summary>The server password to answer with automatically when reconnecting after the creator.</summary>
+        private static string _autoPassword;
+
         /// <summary>Set once the world is downloaded; the session starts when that world reaches the map.</summary>
         public static PendingResume PendingResume { get; set; }
 
@@ -83,8 +91,11 @@ namespace BannerlordMP.Ui
         }
 
         /// <summary>Joins a server directly (console command, or an address typed in the browser).</summary>
-        public static void ConnectTo(ConnectTarget target)
+        public static void ConnectTo(ConnectTarget target) => ConnectTo(target, null);
+
+        private static void ConnectTo(ConnectTarget target, string serverPassword)
         {
+            _autoPassword = serverPassword;
             if (target.IsSteam && target.SteamId == SteamService.MySteamId)
             {
                 // Same Steam account on this PC (two game windows): Steam cannot relay to yourself.
@@ -104,14 +115,23 @@ namespace BannerlordMP.Ui
                 Dialogs.Message("Could not join", e.Message + (target.IsSteam ? "\n\nTry the LAN entry or Direct connect (IP) instead." : ""));
                 return;
             }
-            _connection.PasswordNeeded = serverName => Dialogs.Text(serverName, "This server needs a password:",
-                password => _connection?.SendHello(password), Cancel, password: true);
+            _connection.PasswordNeeded = serverName =>
+            {
+                var remembered = _autoPassword;
+                _autoPassword = null;
+                if (remembered != null)
+                    _connection?.SendHello(remembered);
+                else
+                    Dialogs.Text(serverName, "This server needs a password:", password => _connection?.SendHello(password), Cancel, password: true);
+            };
             _connection.SlotsReceived = ShowSlots;
             _connection.Progress = Log.Notify;
             _connection.WorldReceived = OnWorldReceived;
             _connection.Failed = reason =>
             {
                 _connection = null;
+                if (_madeHero != null)
+                    reason += $"\n\n{_madeHero.Name} from the character creator is kept: join again and pick them under \"Create a new hero\".";
                 Dialogs.Message("Could not join", reason);
             };
         }
@@ -210,8 +230,29 @@ namespace BannerlordMP.Ui
                 validate: text => TryParseAddress(text, port, out _) ? null : "Enter an address, optionally with :port.");
         }
 
+        /// <summary>The character creator is done: reconnect to the server it was for and offer the new hero.</summary>
+        public static void OnHeroMade(HeroSheet sheet, ConnectTarget target, string serverPassword)
+        {
+            _madeHero = sheet;
+            _madeHeroServer = Remember(target);
+            _offerMadeHero = true;
+            ConnectTo(target, serverPassword);
+        }
+
+        private static HeroSheet MadeHeroForThisServer =>
+            _madeHero != null && _connection != null && _madeHeroServer == Remember(_connection.Target) ? _madeHero : null;
+
         private static void ShowSlots(SlotListMessage list)
         {
+            if (_offerMadeHero)
+            {
+                _offerMadeHero = false;
+                if (MadeHeroForThisServer != null && list.MaxSlots > list.Slots.Count)
+                {
+                    ShowMadeHero(list, MadeHeroForThisServer);
+                    return;
+                }
+            }
             var serverName = _connection?.ServerName ?? "Server";
             var lastHero = MenuMemory.Get("Join.Hero." + serverName);
             var choices = list.Slots
@@ -228,12 +269,95 @@ namespace BannerlordMP.Ui
                 slot =>
                 {
                     if (slot == CreateNewHero)
-                        ShowNewHero(list, new NewHero { Culture = list.Cultures.FirstOrDefault().Id });
+                        ShowCreateChoice(list);
                     else
                         Dialogs.Text(slot.HeroName, $"Password for {slot.HeroName}:", password => _connection?.ClaimSlot(slot, password),
                             () => ShowSlots(list), password: true);
                 },
                 Cancel, "Play");
+        }
+
+        private enum CreateWay
+        {
+            MadeHero,
+            Creator,
+            Quick,
+        }
+
+        private static void ShowCreateChoice(SlotListMessage list)
+        {
+            var made = MadeHeroForThisServer;
+            var choices = new List<Choice<CreateWay>>();
+            if (made != null)
+                choices.Add(new Choice<CreateWay>(CreateWay.MadeHero, $">>  {made.Name}  <<   (made in the character creator)", hint: "Join as the hero you just made."));
+            choices.Add(new Choice<CreateWay>(CreateWay.Creator, "Character creator (like single player)",
+                hint: "Every creation screen from a new campaign: culture, face, background, skills, banner, clan name. You rejoin automatically afterwards."));
+            choices.Add(new Choice<CreateWay>(CreateWay.Quick, "Quick create", hint: "Just a name, culture and gender. The server picks the rest."));
+            Dialogs.Choose("New hero", "How do you want to make your hero?", choices, way =>
+            {
+                switch (way)
+                {
+                    case CreateWay.MadeHero:
+                        ShowMadeHero(list, made);
+                        break;
+                    case CreateWay.Creator:
+                        StartCreator(list);
+                        break;
+                    case CreateWay.Quick:
+                        ShowNewHero(list, new NewHero { Culture = list.Cultures.FirstOrDefault().Id });
+                        break;
+                }
+            }, () => ShowSlots(list), "Select");
+        }
+
+        private static void StartCreator(SlotListMessage list)
+        {
+            var connection = _connection;
+            if (connection == null)
+                return;
+            var target = connection.Target;
+            var serverPassword = connection.ServerPassword;
+            // The server is left while the creator runs (that can take a while) and joined again afterwards.
+            Cancel();
+            if (!CharacterCreator.Begin(target, serverPassword))
+                Dialogs.Message("Character creator", "Could not find the game's Sandbox new-game option, so the creator cannot start. Use Quick create instead.");
+        }
+
+        /// <summary>Sends the hero from the character creator, after a password (and a new name, if that one is taken).</summary>
+        private static void ShowMadeHero(SlotListMessage list, HeroSheet sheet)
+        {
+            Action back = () => ShowSlots(list);
+            if (list.Cultures.All(c => c.Id != sheet.CultureId))
+            {
+                Dialogs.Message("Character creator", $"This server has no '{sheet.CultureId}' culture (different modules?). Use Quick create instead.", back);
+                return;
+            }
+            if (ValidateName(list, sheet.Name) != null)
+            {
+                Dialogs.Text("Name", $"The name {sheet.Name} cannot be used on this server. Pick another one for your hero:",
+                    name =>
+                    {
+                        sheet.Name = name.Trim();
+                        ShowMadeHero(list, sheet);
+                    }, back, defaultText: sheet.Name, validate: name => ValidateName(list, name));
+                return;
+            }
+            Dialogs.Text(sheet.Name, $"Choose a password for {sheet.Name} (at least 4 characters). Anyone who wants to play this hero needs it.",
+                password => Dialogs.Text(sheet.Name, "Type it again:",
+                    confirm => _connection?.CreateHero(sheet.Name, sheet.CultureId, sheet.IsFemale, password, sheet), back, password: true,
+                    validate: confirm => confirm == password ? null : "Passwords do not match."),
+                back, password: true,
+                validate: password => password.Length < 4 ? "At least 4 characters." : null);
+        }
+
+        private static string ValidateName(SlotListMessage list, string name)
+        {
+            name = (name ?? string.Empty).Trim();
+            if (name.Length < 2 || name.Length > 32)
+                return "2 to 32 characters.";
+            if (name.IndexOf('|') >= 0)
+                return "No | characters.";
+            return list.Slots.Any(slot => string.Equals(slot.HeroName, name, StringComparison.OrdinalIgnoreCase)) ? "That name is taken." : null;
         }
 
         private sealed class NewHero
@@ -277,15 +401,7 @@ namespace BannerlordMP.Ui
                         break;
                     case HeroItem.Name:
                         Dialogs.Text("Name", "Your hero's name:", name => { hero.Name = name.Trim(); back(); }, back, defaultText: hero.Name,
-                            validate: name =>
-                            {
-                                name = name.Trim();
-                                if (name.Length < 2 || name.Length > 32)
-                                    return "2 to 32 characters.";
-                                if (name.IndexOf('|') >= 0)
-                                    return "No | characters.";
-                                return list.Slots.Any(slot => string.Equals(slot.HeroName, name, StringComparison.OrdinalIgnoreCase)) ? "That name is taken." : null;
-                            });
+                            validate: name => ValidateName(list, name));
                         break;
                     case HeroItem.Culture:
                         Dialogs.Choose("Culture", "Your hero starts at one of its towns.", list.Cultures.Select(c => new Choice<string>(c.Id, c.Name)).ToList(),
@@ -304,7 +420,7 @@ namespace BannerlordMP.Ui
                             validate: password => password.Length < 4 ? "At least 4 characters." : null);
                         break;
                 }
-            }, () => ShowSlots(list), "Select");
+            }, () => ShowCreateChoice(list), "Select");
         }
 
         private static void OnWorldReceived(byte[] save, JoinAcceptedMessage accepted)
@@ -313,6 +429,8 @@ namespace BannerlordMP.Ui
             Log.Info($"Join: world received ({save.Length} bytes) for {accepted.HeroName} ({accepted.HeroId})");
             var target = _connection?.Target;
             _connection = null;
+            _madeHero = null;
+            _madeHeroServer = null;
             try
             {
                 GameBridge.WriteSaveFile(JoinSaveName, save);

@@ -43,6 +43,9 @@ namespace BannerlordMP.Session
 
         public string ServerName => _challenge?.ServerName ?? Target.ToString();
 
+        /// <summary>The server password last sent, kept in memory only (to rejoin after the character creator).</summary>
+        public string ServerPassword { get; private set; }
+
         public void Poll()
         {
             if (!_finished)
@@ -51,6 +54,7 @@ namespace BannerlordMP.Session
 
         public void SendHello(string serverPassword)
         {
+            ServerPassword = serverPassword;
             byte[] proof = new byte[0];
             if (_challenge.PasswordRequired)
                 proof = PasswordProof.Prove(serverPassword ?? string.Empty, _challenge.ServerSalt, _challenge.Nonce);
@@ -72,7 +76,8 @@ namespace BannerlordMP.Session
             Progress?.Invoke("Checking your hero...");
         }
 
-        public void CreateHero(string name, string cultureId, bool isFemale, string heroPassword)
+        /// <param name="sheet">The hero from the character creator, or null for a quick create.</param>
+        public void CreateHero(string name, string cultureId, bool isFemale, string heroPassword, HeroSheet sheet = null)
         {
             var salt = PasswordProof.NewSalt();
             _net.SendToAll(new CreateHeroMessage
@@ -82,6 +87,7 @@ namespace BannerlordMP.Session
                 IsFemale = isFemale,
                 Salt = salt,
                 Key = PasswordProof.DeriveKey(heroPassword ?? string.Empty, salt),
+                Sheet = sheet,
             });
             Progress?.Invoke("Creating your hero...");
         }

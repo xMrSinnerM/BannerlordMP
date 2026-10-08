@@ -16,6 +16,8 @@ namespace BannerlordMP.Core.Slots
         /// <summary>Culture id, kept so the hero can be recreated if the server lost it.</summary>
         public string CultureId = string.Empty;
         public bool IsFemale;
+        /// <summary>The serialized character sheet if the hero came from the character creator; empty otherwise.</summary>
+        public byte[] Sheet = Array.Empty<byte>();
         public byte[] Salt = Array.Empty<byte>();
         public byte[] Key = Array.Empty<byte>();
     }
@@ -49,7 +51,7 @@ namespace BannerlordMP.Core.Slots
         public bool IsNameTaken(string heroName) =>
             _slots.Any(s => string.Equals(s.HeroName, heroName?.Trim(), StringComparison.OrdinalIgnoreCase));
 
-        public PlayerSlot Add(string heroId, string heroName, string cultureName, byte[] salt, byte[] key, string cultureId = "", bool isFemale = false)
+        public PlayerSlot Add(string heroId, string heroName, string cultureName, byte[] salt, byte[] key, string cultureId = "", bool isFemale = false, byte[] sheet = null)
         {
             if (!CanCreate)
                 throw new InvalidOperationException("All slots are taken.");
@@ -63,6 +65,7 @@ namespace BannerlordMP.Core.Slots
                 CultureName = cultureName ?? string.Empty,
                 CultureId = cultureId ?? string.Empty,
                 IsFemale = isFemale,
+                Sheet = sheet ?? Array.Empty<byte>(),
                 Salt = salt,
                 Key = key,
             };
@@ -103,7 +106,8 @@ namespace BannerlordMP.Core.Slots
                     Convert.ToBase64String(s.Salt),
                     Convert.ToBase64String(s.Key),
                     Encode(s.CultureId),
-                    s.IsFemale ? "f" : "m"));
+                    s.IsFemale ? "f" : "m",
+                    Convert.ToBase64String(s.Sheet)));
             }
             return sb.ToString();
         }
@@ -127,8 +131,8 @@ namespace BannerlordMP.Core.Slots
                     continue;
                 }
                 var parts = line.Split('|');
-                // Six fields in files written before culture id and gender were kept.
-                if (parts.Length != 6 && parts.Length != 8)
+                // Six fields in files written before culture id and gender were kept, eight before the sheet.
+                if (parts.Length != 6 && parts.Length != 8 && parts.Length != 9)
                     throw new FormatException("Corrupt slot line.");
                 registry._slots.Add(new PlayerSlot
                 {
@@ -140,6 +144,7 @@ namespace BannerlordMP.Core.Slots
                     Key = Convert.FromBase64String(parts[5]),
                     CultureId = parts.Length > 6 ? Decode(parts[6]) : string.Empty,
                     IsFemale = parts.Length > 7 && parts[7] == "f",
+                    Sheet = parts.Length > 8 ? Convert.FromBase64String(parts[8]) : Array.Empty<byte>(),
                 });
             }
             return registry;

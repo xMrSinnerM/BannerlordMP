@@ -79,6 +79,7 @@ namespace BannerlordMP
             try
             {
                 JoinMenu.Tick();
+                CharacterCreator.Tick();
                 StartPendingSession();
             }
             catch (Exception e)
@@ -105,7 +106,7 @@ namespace BannerlordMP
         /// <summary>Hosting or joining from the main menu loads a world first; the session starts once it is on the map.</summary>
         private static void StartPendingSession()
         {
-            if (!GameBridge.OnCampaignMap)
+            if (!GameBridge.OnCampaignMap || CharacterCreator.Active)
                 return;
 
             if (HostMenu.PendingHost != null)

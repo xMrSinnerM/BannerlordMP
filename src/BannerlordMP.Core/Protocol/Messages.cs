@@ -173,6 +173,8 @@ namespace BannerlordMP.Core.Protocol
         public bool IsFemale;
         public byte[] Salt = new byte[0];
         public byte[] Key = new byte[0];
+        /// <summary>Set when the hero was made in the single-player character creator; null for a quick create.</summary>
+        public HeroSheet Sheet;
 
         public void Write(BinaryWriter w)
         {
@@ -181,6 +183,8 @@ namespace BannerlordMP.Core.Protocol
             w.Write(IsFemale);
             w.WriteByteArray(Salt);
             w.WriteByteArray(Key);
+            w.Write(Sheet != null);
+            Sheet?.Write(w);
         }
 
         public void Read(BinaryReader r)
@@ -190,6 +194,7 @@ namespace BannerlordMP.Core.Protocol
             IsFemale = r.ReadBoolean();
             Salt = r.ReadByteArray(64);
             Key = r.ReadByteArray(64);
+            Sheet = r.ReadBoolean() ? HeroSheet.Read(r) : null;
         }
     }
 

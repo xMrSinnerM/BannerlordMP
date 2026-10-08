@@ -18,7 +18,8 @@ Main menu (no campaign loaded)                      Server (campaign on the map)
   connect (Steam relay, LAN or IP) ───────────────► AuthChallenge(server name, password?, salt, nonce)
   Hello(server-password proof) ───────────────────► verify → SlotList(slots, cultures)
   ClaimSlot(slot, hero-password proof)  or
-  CreateHero(name, culture, gender, salt, key) ───► verify / create hero + clan + party → save world
+  CreateHero(name, culture, gender, salt, key,
+             character sheet?) ───────────────────► verify / create hero + clan + party → save world
                                          ◄──────── JoinAccepted(hero, resume token, size, hash) + SaveChunks
   verify SHA-256, write BannerlordMP_Join.sav,
   disconnect, load it
@@ -32,6 +33,14 @@ On the map
   replayed. A new hero's key is derived on the client; the server stores only salt and key.
 - **Slots** (`Core/Slots/SlotRegistry`) are stored per campaign in `Modules/BannerlordMP/Servers/<id>.slots`
   on the server, never in the save. Offline players' heroes stay frozen where they logged off.
+- **Character creator** (`Ui/CharacterCreator`): the client leaves the server, presses the game's own
+  Sandbox new-game button and lets the player go through every creation screen. A second after the map
+  opens it copies the main hero into a `HeroSheet` (`Game/HeroSheetBridge`: name, clan name, banner,
+  culture, gender, age, body properties, attributes, skills, focus, traits, level, perks, both equipment
+  sets, gold, troops), ends that campaign (saving is blocked while it runs) and reconnects with the same
+  server password. The sheet rides along with `CreateHero`; the server clamps it (`HeroSheetRules`),
+  creates the hero as usual and then applies the sheet. The slot keeps the sheet, so a hero the server
+  lost is rebuilt the same way.
 - **Transports** (`Net/`): `NetTransport` (LiteNetLib UDP, which also answers LAN discovery broadcasts)
   and `SteamTransport` (Steam Networking Sockets over Valve's relay). The server listens on both
   through `CompositeTransport`. Steam lobbies (`Steam/SteamService`) only advertise the server and
@@ -120,7 +129,8 @@ The order is chosen so that each step removes a limitation and makes the next on
    sieges and raids in progress, quests, relations, marriages, companions, equipment.
 3. **Interactions as host-validated commands:** trade against the server's markets, recruiting from
    its notables, quests, dialogue outcomes, clan and kingdom actions, sieges and raids.
-4. **Hero death and capture sync**, respawning, and a face editor for new heroes.
+4. **Hero death and capture sync**, and respawning. (New heroes use the single-player character
+   creator since v0.3.16.)
 5. **Joint battles** (several players in one battle) using the multiplayer mission stack.
 6. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),
    and TaleWorlds' headless dedicated server only ships the multiplayer modules. Loading the campaign
