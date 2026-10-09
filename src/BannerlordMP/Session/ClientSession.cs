@@ -50,6 +50,8 @@ namespace BannerlordMP.Session
         private bool _detached;
         /// <summary>Just back on the map from a battle or conversation: the time missed is skipped without upkeep.</summary>
         private bool _justReturned;
+        /// <summary>Behind by this much for any reason, skip instead of fast-forwarding.</summary>
+        private const double LargeGapHours = 6;
         private bool _hostDetached;
         private SyncAction _lastAction = SyncAction.FollowHost;
         private float _partyStateTimer;
@@ -429,6 +431,10 @@ namespace BannerlordMP.Session
             _justReturned = false;
             var hostHours = _sync.EstimateHostHours(RealSeconds);
             var behind = hostHours - GameBridge.NowHours;
+            // Only for time missed in a battle or conversation (or a big gap). Everyday drift of a few minutes is
+            // evened out by the gentle catch-up; skipping it made the map jump every couple of seconds.
+            if (!returned && behind < LargeGapHours)
+                return;
             if (behind <= Config.CatchUpThresholdHours || !GameBridge.JumpToHours(hostHours))
                 return; // Not behind, or the clock could not be moved: the normal fast-forward handles it.
 

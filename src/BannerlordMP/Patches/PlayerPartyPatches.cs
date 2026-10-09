@@ -6,6 +6,7 @@ using BannerlordMP.Session;
 using HarmonyLib;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.CampaignBehaviors;
+using TaleWorlds.CampaignSystem.CampaignBehaviors.AiBehaviors;
 using TaleWorlds.CampaignSystem.Party;
 
 namespace BannerlordMP.Patches
@@ -56,6 +57,30 @@ namespace BannerlordMP.Patches
             private static bool Prefix(MobileParty __0)
             {
                 return !(MpSession.Current is HostSession host && host.IsPlayerPartyAway(__0));
+            }
+        }
+
+        /// <summary>
+        /// A party's hourly AI planning (where to go, whom to chase, which settlement to visit). Players' parties
+        /// are steered over the network, so the host's AI never plans for them. And one party's planning failing
+        /// (a NullReferenceException in the game's settlement-visit check took a server down after a battle) must
+        /// not end the game: that party just skips planning this hour.
+        /// </summary>
+        [HarmonyPatch(typeof(AiPartyThinkBehavior), "PartyHourlyAiTick")]
+        internal static class HourlyAiPlanning
+        {
+            private static readonly HashSet<string> Reported = new HashSet<string>();
+
+            private static bool Prefix(MobileParty mobileParty) => !IsPlayerParty(mobileParty);
+
+            private static Exception Finalizer(Exception __exception, MobileParty mobileParty)
+            {
+                if (__exception == null)
+                    return null;
+                var key = (mobileParty?.StringId ?? "?") + __exception.GetType().Name;
+                if (Reported.Add(key))
+                    Log.Error($"AI planning failed for party {mobileParty?.StringId} (leader {mobileParty?.LeaderHero?.StringId}, faction {mobileParty?.MapFaction?.StringId}); skipped", __exception);
+                return null;
             }
         }
 
