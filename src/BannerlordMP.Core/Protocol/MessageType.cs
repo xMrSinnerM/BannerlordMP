@@ -31,5 +31,8 @@ namespace BannerlordMP.Core.Protocol
         PartyInfoRequest = 27,
         DecisionVoteRequest = 28,
         DecisionVote = 29,
+        MarketRequest = 30,
+        MarketState = 31,
+        MarketChange = 32,
     }
 }

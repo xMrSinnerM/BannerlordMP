@@ -27,6 +27,29 @@ namespace BannerlordMP.Core.Tests
         }
 
         [Fact]
+        public void MarketMessages()
+        {
+            Assert.Equal("town_V1", RoundTrip(new MarketRequestMessage { SettlementId = "town_V1" }).SettlementId);
+
+            var state = RoundTrip(new MarketStateMessage
+            {
+                SettlementId = "town_V1",
+                Gold = 12000,
+                Prosperity = 4500.5f,
+                Items = new Dictionary<string, int> { { "grain|", 40 }, { "wine|", 3 } },
+                Categories = new List<CategoryMarket> { new CategoryMarket("grain", 1.5f, 2.25f) },
+            });
+            Assert.Equal(12000, state.Gold);
+            Assert.Equal(4500.5f, state.Prosperity);
+            Assert.Equal(40, state.Items["grain|"]);
+            Assert.Equal(2.25f, state.Categories[0].Demand);
+
+            var change = RoundTrip(new MarketChangeMessage { SettlementId = "town_V1", GoldChange = -350, Items = new Dictionary<string, int> { { "grain|", -5 } } });
+            Assert.Equal(-350, change.GoldChange);
+            Assert.Equal(-5, change.Items["grain|"]);
+        }
+
+        [Fact]
         public void LoginAndSlotMessages()
         {
             var challenge = RoundTrip(new AuthChallengeMessage { ServerName = "Calradia", PasswordRequired = true, ServerSalt = new byte[] { 9 }, Nonce = new byte[] { 7, 7 } });

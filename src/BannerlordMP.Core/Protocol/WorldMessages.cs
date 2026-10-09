@@ -92,6 +92,10 @@ namespace BannerlordMP.Core.Protocol
         SiegeStarted = 6,
         /// <summary>A = settlement whose siege ended (lifted, broken or won).</summary>
         SiegeEnded = 7,
+        /// <summary>A = hero taken prisoner, B = the capturing party (mobile party id, or settlement id for a prison).</summary>
+        HeroCaptured = 8,
+        /// <summary>A = hero freed (released, ransomed, escaped...).</summary>
+        HeroReleased = 9,
     }
 
     /// <summary>

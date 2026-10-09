@@ -26,6 +26,20 @@ namespace BannerlordMP.Game
             CampaignEvents.OnSiegeEventEndedEvent.AddNonSerializedListener(this, siege =>
                 World(WorldEventKind.SiegeEnded, siege?.BesiegedSettlement?.StringId, string.Empty));
             CampaignEvents.OnCharacterCreationIsOverEvent.AddNonSerializedListener(this, Ui.CharacterCreator.OnCreationOver);
+            CampaignEvents.HeroPrisonerTaken.AddNonSerializedListener(this, (captor, prisoner) =>
+                World(WorldEventKind.HeroCaptured, prisoner?.StringId, captor?.IsMobile == true ? captor.MobileParty?.StringId : captor?.Settlement?.StringId));
+            CampaignEvents.HeroPrisonerReleased.AddNonSerializedListener(this, (prisoner, captor, faction, detail, notify) =>
+                World(WorldEventKind.HeroReleased, prisoner?.StringId, string.Empty));
+            CampaignEvents.SettlementEntered.AddNonSerializedListener(this, (party, settlement, hero) =>
+            {
+                if (party != null && party == MobileParty.MainParty)
+                    Forward(s => s.OnLocalSettlementEntered(settlement));
+            });
+            CampaignEvents.OnSettlementLeftEvent.AddNonSerializedListener(this, (party, settlement) =>
+            {
+                if (party != null && party == MobileParty.MainParty)
+                    Forward(s => s.OnLocalSettlementLeft(settlement));
+            });
             CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
                 World(WorldEventKind.HeroKilled, victim?.StringId, killer?.StringId ?? string.Empty));
         }

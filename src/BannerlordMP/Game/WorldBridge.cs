@@ -67,6 +67,8 @@ namespace BannerlordMP.Game
                 }
                 foreach (var attribute in Attributes.All)
                     ledger["a:" + attribute.StringId] = hero.GetAttributeValue(attribute);
+                CaptureEquipment(hero.BattleEquipment, 'b', ledger);
+                CaptureEquipment(hero.CivilianEquipment, 'c', ledger);
             }
 
             CaptureTroops(party.MemberRoster, "m:", "w:", ledger);
@@ -96,6 +98,7 @@ namespace BannerlordMP.Game
                 return;
             var hero = party.LeaderHero;
             var troopChanges = new Dictionary<(TroopRoster Roster, string Id), (int Count, int Wounded)>();
+            var equipmentChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
             {
@@ -133,10 +136,25 @@ namespace BannerlordMP.Game
                         AddTroopChange(troopChanges, party.PrisonRoster, key, change);
                     else if (key.StartsWith("i:"))
                         ApplyItem(party.ItemRoster, key.Substring(2), change);
+                    else if (key.StartsWith("e:") && hero != null)
+                        equipmentChanges.Add(pair);
                 }
                 catch (Exception e)
                 {
                     Log.Error($"Ledger entry {key}{change:+#;-#;0} failed", e);
+                }
+            }
+
+            // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
+            foreach (var pair in equipmentChanges.OrderBy(p => p.Value))
+            {
+                try
+                {
+                    ApplyEquipmentChange(hero, pair.Key, pair.Value);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Equipment change {pair.Key}{pair.Value:+#;-#;0} failed", e);
                 }
             }
 
@@ -206,6 +224,54 @@ namespace BannerlordMP.Game
             var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
             items.AddToCounts(new EquipmentElement(item, modifier, null, false), change);
         }
+
+        /// <summary>
+        /// What the hero wears, one counter per filled slot: "e:" + set ('b' battle, 'c' civilian) + slot index +
+        /// ":" + "itemId|modifierId" = 1. Changing a slot's item is then -1 for the old one and +1 for the new one.
+        /// </summary>
+        private static void CaptureEquipment(Equipment equipment, char set, Dictionary<string, int> ledger)
+        {
+            if (equipment == null)
+                return;
+            for (var i = 0; i < Equipment.EquipmentSlotLength; i++)
+            {
+                var element = equipment[i];
+                if (element.IsEmpty || element.Item == null)
+                    continue;
+                ledger[$"e:{set}{i}:{element.Item.StringId}|{element.ItemModifier?.StringId ?? string.Empty}"] = 1;
+            }
+        }
+
+        private static void ApplyEquipmentChange(Hero hero, string key, int change)
+        {
+            var colon = key.IndexOf(':', 2);
+            if (colon < 4 || change == 0 || !int.TryParse(key.Substring(3, colon - 3), out var slot) || slot < 0 || slot >= Equipment.EquipmentSlotLength)
+                return;
+            var equipment = key[2] == 'c' ? hero.CivilianEquipment : key[2] == 'b' ? hero.BattleEquipment : null;
+            var element = ParseElement(key.Substring(colon + 1));
+            if (equipment == null || element.IsEmpty)
+                return;
+            var current = equipment[slot];
+            var same = !current.IsEmpty && current.Item == element.Item && current.ItemModifier == element.ItemModifier;
+            if (change < 0 && same)
+                equipment[slot] = EquipmentElement.Invalid;
+            else if (change > 0 && !same)
+                equipment[slot] = element;
+        }
+
+        /// <summary>"itemId|modifierId" to an item, or <see cref="EquipmentElement.Invalid"/> if this game has no such item.</summary>
+        public static EquipmentElement ParseElement(string id)
+        {
+            var bar = id.IndexOf('|');
+            var item = MBObjectManager.Instance.GetObject<ItemObject>(bar < 0 ? id : id.Substring(0, bar));
+            if (item == null)
+                return EquipmentElement.Invalid;
+            var modifierId = bar < 0 ? string.Empty : id.Substring(bar + 1);
+            var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
+            return new EquipmentElement(item, modifier, null, false);
+        }
+
+        public static string ElementKey(EquipmentElement element) => element.Item.StringId + "|" + (element.ItemModifier?.StringId ?? string.Empty);
 
         private static void WithSkill(string key, Action<SkillObject> action)
         {
@@ -328,6 +394,110 @@ namespace BannerlordMP.Game
             return true;
         }
 
+        // ----- Markets ----------------------------------------------------------------------------------------
+
+        /// <summary>Towns and villages: places with stock and gold to trade against.</summary>
+        public static bool HasMarket(Settlement settlement) =>
+            settlement != null && (settlement.IsTown || settlement.IsVillage) && settlement.SettlementComponent != null && settlement.ItemRoster != null;
+
+        public static MarketStateMessage CaptureMarket(Settlement settlement)
+        {
+            var market = new MarketStateMessage
+            {
+                SettlementId = settlement.StringId,
+                Gold = settlement.SettlementComponent.Gold,
+                Prosperity = settlement.Town?.Prosperity ?? -1f,
+                Items = CaptureStock(settlement.ItemRoster),
+            };
+            var data = settlement.Town?.MarketData;
+            if (data != null)
+            {
+                foreach (var category in ItemCategories.All)
+                    market.Categories.Add(new CategoryMarket(category.StringId, data.GetSupply(category), data.GetDemand(category)));
+            }
+            return market;
+        }
+
+        /// <summary>Client: make a settlement's market what the host says it is.</summary>
+        public static void ApplyMarketState(Settlement settlement, MarketStateMessage market)
+        {
+            var component = settlement.SettlementComponent;
+            component.ChangeGold(Math.Max(0, market.Gold) - component.Gold);
+            if (settlement.Town != null && market.Prosperity >= 0)
+                settlement.Town.Prosperity = market.Prosperity;
+
+            var current = CaptureStock(settlement.ItemRoster);
+            foreach (var key in current.Keys.Union(market.Items.Keys).ToList())
+            {
+                current.TryGetValue(key, out var have);
+                market.Items.TryGetValue(key, out var want);
+                ChangeStock(settlement.ItemRoster, key, Math.Max(0, want) - have);
+            }
+
+            var data = settlement.Town?.MarketData;
+            if (data != null)
+            {
+                foreach (var entry in market.Categories)
+                {
+                    var category = ItemCategories.All.FirstOrDefault(c => c.StringId == entry.CategoryId);
+                    if (category != null)
+                        data.SetSupplyDemand(category, entry.Supply, entry.Demand);
+                }
+            }
+        }
+
+        /// <summary>Client: what trading changed since <paramref name="before"/>, or null if nothing did.</summary>
+        public static MarketChangeMessage DiffMarket(Settlement settlement, MarketStateMessage before)
+        {
+            var change = new MarketChangeMessage { SettlementId = settlement.StringId, GoldChange = settlement.SettlementComponent.Gold - before.Gold };
+            var now = CaptureStock(settlement.ItemRoster);
+            foreach (var key in now.Keys.Union(before.Items.Keys))
+            {
+                now.TryGetValue(key, out var after);
+                before.Items.TryGetValue(key, out var was);
+                if (after != was)
+                    change.Items[key] = after - was;
+            }
+            return change.GoldChange == 0 && change.Items.Count == 0 ? null : change;
+        }
+
+        /// <summary>Host: apply a player's trading, kept within what the settlement has.</summary>
+        public static void ApplyMarketChange(Settlement settlement, MarketChangeMessage change)
+        {
+            var component = settlement.SettlementComponent;
+            component.ChangeGold(Math.Max(-component.Gold, change.GoldChange));
+            var current = CaptureStock(settlement.ItemRoster);
+            foreach (var pair in change.Items)
+            {
+                current.TryGetValue(pair.Key, out var have);
+                ChangeStock(settlement.ItemRoster, pair.Key, Math.Max(-have, pair.Value));
+            }
+        }
+
+        private static Dictionary<string, int> CaptureStock(ItemRoster roster)
+        {
+            var stock = new Dictionary<string, int>();
+            for (var i = 0; i < roster.Count; i++)
+            {
+                var element = roster.GetElementCopyAtIndex(i);
+                if (element.EquipmentElement.Item == null || element.Amount <= 0)
+                    continue;
+                var key = ElementKey(element.EquipmentElement);
+                stock.TryGetValue(key, out var amount);
+                stock[key] = amount + element.Amount;
+            }
+            return stock;
+        }
+
+        private static void ChangeStock(ItemRoster roster, string key, int change)
+        {
+            if (change == 0)
+                return;
+            var element = ParseElement(key);
+            if (!element.IsEmpty)
+                roster.AddToCounts(element, change);
+        }
+
         // ----- World events -----------------------------------------------------------------------------------
 
         public static void ApplyWorldEvent(WorldEventMessage message)
@@ -401,6 +571,30 @@ namespace BannerlordMP.Game
                                 break;
                             }
                             siege.FinalizeSiegeEvent();
+                            break;
+                        }
+                        case WorldEventKind.HeroCaptured:
+                        {
+                            var prisoner = GameBridge.FindHero(message.A);
+                            var captor = GameBridge.FindParty(message.B)?.Party ?? Find<Settlement>(message.B)?.Party;
+                            if (prisoner == null || captor == null || !prisoner.IsAlive || prisoner.PartyBelongedToAsPrisoner == captor)
+                                break;
+                            // Players' heroes are captured only by their own game (their party would fall apart here).
+                            if (Session.MpSession.Current?.IsPlayedHero(prisoner) == true)
+                            {
+                                Log.Info("Ignoring capture of a played hero " + message.A);
+                                break;
+                            }
+                            if (prisoner.IsPrisoner)
+                                EndCaptivityAction.ApplyByReleasedAfterBattle(prisoner); // Held by someone else here: move them.
+                            TakePrisonerAction.Apply(captor, prisoner);
+                            break;
+                        }
+                        case WorldEventKind.HeroReleased:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            if (hero != null && hero.IsAlive && hero.IsPrisoner)
+                                EndCaptivityAction.ApplyByReleasedAfterBattle(hero);
                             break;
                         }
                         case WorldEventKind.HeroKilled:

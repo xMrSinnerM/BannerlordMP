@@ -8,7 +8,7 @@ namespace BannerlordMP.Core.Protocol
     public static class MessageCodec
     {
         /// <summary>Bump whenever a message layout changes; host and clients must match exactly.</summary>
-        public const ushort ProtocolVersion = 6;
+        public const ushort ProtocolVersion = 7;
 
         private static readonly Dictionary<MessageType, Func<INetMessage>> Factories = new Dictionary<MessageType, Func<INetMessage>>
         {
@@ -41,6 +41,9 @@ namespace BannerlordMP.Core.Protocol
             { MessageType.PartyInfoRequest, () => new PartyInfoRequestMessage() },
             { MessageType.DecisionVoteRequest, () => new DecisionVoteRequestMessage() },
             { MessageType.DecisionVote, () => new DecisionVoteMessage() },
+            { MessageType.MarketRequest, () => new MarketRequestMessage() },
+            { MessageType.MarketState, () => new MarketStateMessage() },
+            { MessageType.MarketChange, () => new MarketChangeMessage() },
         };
 
         public static byte[] Encode(INetMessage message)

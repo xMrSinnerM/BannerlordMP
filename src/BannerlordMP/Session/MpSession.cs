@@ -87,6 +87,9 @@ namespace BannerlordMP.Session
             OnSpeedRequested(speed);
         }
 
+        /// <summary>A hero somebody plays (this machine's, or another player's): only their own game may capture or free them.</summary>
+        public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo));
+
         public bool IsPlayerParty(MobileParty party)
         {
             if (party == null)
@@ -108,6 +111,15 @@ namespace BannerlordMP.Session
 
         /// <summary>A political or ownership change happened in the local campaign.</summary>
         public virtual void OnLocalWorldEvent(Core.Protocol.WorldEventKind kind, string a, string b)
+        {
+        }
+
+        /// <summary>This machine's main party entered or left a settlement.</summary>
+        public virtual void OnLocalSettlementEntered(TaleWorlds.CampaignSystem.Settlements.Settlement settlement)
+        {
+        }
+
+        public virtual void OnLocalSettlementLeft(TaleWorlds.CampaignSystem.Settlements.Settlement settlement)
         {
         }
 

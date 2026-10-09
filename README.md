@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.18, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.19, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -111,8 +111,9 @@ happens.
 | Every party's position | Smoothed between updates |
 | Parties appearing and disappearing | Bandits, caravans, lords, new player heroes... mirrored on every machine |
 | Troops of parties near you | Kept accurate, so the army you attack is the real one |
-| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
-| Your own party and hero | Gold, troops, prisoners, items, health, skill xp, attribute and focus points, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
+| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
+| Town and village markets | When you enter, your game gets the server's real stock, gold, prosperity and prices; when you leave, what you bought and sold goes back to the server, so the next player finds the market as you left it |
+| Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, skill xp, attribute and focus points, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
@@ -126,20 +127,21 @@ happens.
 - **Kingdom decisions screen:** in your game it shows the decisions from when you joined. Vote through the
   pop-up the server sends instead (see above).
 - **Not shared yet:**
-  - settlement economies and markets (prosperity, stock, prices, so buying doesn't empty the server's market)
+  - two players trading in the same town at the same time each see the market as it was when they entered
+    (both trades still count on the server)
+  - workshops, tournaments and other settlement details beyond the market
   - siege progress details (siege engines, bombardment) beyond the siege itself
   - raids
   - quests
   - relations
   - marriages
   - companions joining or leaving
-  - your equipment
   - clan parties and caravans you create yourself
   - joint battles (players can't fight in the same battle or attack each other)
 - **Mirrored parties are stand-ins.** A party the server spawns after you joined appears with the right
   name, clan, troops and position, but as a generic party (its map icon may look different).
-- **Heroes in battle results:** deaths, captures and releases of heroes are not applied on the host
-  (regular troops are).
+- **Heroes in battle results:** deaths, captures and releases are shared. A *player's* hero being captured
+  is not handled yet, and lords moved to or from a dungeon or sold to a ransom broker aren't either.
 - **Steam features** (relay, lobbies, invites) depend on the game's own Steam integration delivering
   Steam callbacks to mods. That's untested; LAN and direct IP don't depend on it.
 - **Character creator heroes** start near a town of their culture, not where single player would start

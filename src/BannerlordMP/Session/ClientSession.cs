@@ -9,6 +9,7 @@ using BannerlordMP.Net;
 using BannerlordMP.Steam;
 using BannerlordMP.Ui;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 
@@ -159,6 +160,36 @@ namespace BannerlordMP.Session
             Net.SendToAll(result);
         }
 
+        /// <summary>The market of the settlement we are in, as the host sent it: what our trading is measured against.</summary>
+        private readonly Dictionary<string, MarketStateMessage> _markets = new Dictionary<string, MarketStateMessage>();
+
+        public override void OnLocalSettlementEntered(Settlement settlement)
+        {
+            if (_welcomed && WorldBridge.HasMarket(settlement))
+                Net.SendToAll(new MarketRequestMessage { SettlementId = settlement.StringId });
+        }
+
+        public override void OnLocalSettlementLeft(Settlement settlement)
+        {
+            if (settlement == null || !_markets.TryGetValue(settlement.StringId, out var before))
+                return;
+            _markets.Remove(settlement.StringId);
+            var change = WorldBridge.DiffMarket(settlement, before);
+            if (change == null)
+                return;
+            Log.Info($"Client: traded in {settlement.StringId}: {change.GoldChange:+#;-#;0} gold, {change.Items.Count} item types");
+            Net.SendToAll(change);
+        }
+
+        private void ApplyMarket(MarketStateMessage market)
+        {
+            var settlement = WorldBridge.Find<Settlement>(market.SettlementId);
+            if (!WorldBridge.HasMarket(settlement))
+                return;
+            WorldBridge.Remote(() => WorldBridge.ApplyMarketState(settlement, market));
+            _markets[settlement.StringId] = WorldBridge.CaptureMarket(settlement);
+        }
+
         public override void OnLocalPartyDestroyed(MobileParty party)
         {
             // Only the host decides which parties stop existing; local destructions come from our own battles,
@@ -267,6 +298,10 @@ namespace BannerlordMP.Session
 
                 case WorldEventMessage worldEvent:
                     QueueOrApply(worldEvent.HostHours, worldEvent);
+                    break;
+
+                case MarketStateMessage market:
+                    ApplyMarket(market);
                     break;
 
                 case PartyRosterMessage roster when Config.ClientSyncRosters:

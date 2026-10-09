@@ -68,7 +68,9 @@ produced them.** Menus and dialogue run locally; their effects on the world trav
 | Parties appearing / disappearing | Host | `PartySpawned` / `PartyDestroyed`; clients create stand-ins (`WorldBridge.CreateMirrorParty`). Full snapshots self-heal: unknown ids → `PartyInfoRequest`, local extras missing twice → removed |
 | Troops of parties near a player | Host | `PartyRoster` within 30 map units, when changed |
 | Settlement owners, war, peace, clan ↔ kingdom, hero deaths | Host; a client proposes the ones its player caused | `WorldEvent`; every apply is idempotent, so the proposer can receive its own event back |
-| The player's party and hero | Both, merged | Ledger (below) |
+| The player's party and hero (incl. worn equipment) | Both, merged | Ledger (below) |
+| Lords captured / freed | Host; a client proposes the ones its battles caused | `WorldEvent` HeroCaptured / HeroReleased (players' heroes excluded) |
+| Town and village markets | Host | `MarketRequest` on entering → `MarketState` (stock, gold, prosperity, category supply/demand); `MarketChange` (the diff) on leaving |
 | AI attacking a player | Host detects, client fights | `EncounterRequest` → the client starts the encounter locally |
 | A battle a client fights | That client | `BattleStarted` (host freezes the parties) → `BattleResult` (host applies enemy losses, destroys losers) |
 | AI-vs-AI battles | Host | Clients can't start encounters that don't involve their own party |
@@ -78,7 +80,8 @@ produced them.** Menus and dialogue run locally; their effects on the world trav
 A player's party is changed from both ends: the host's simulation pays wages, consumes food and heals;
 the player buys, recruits, loots and levels up on their own machine. `WorldBridge.CaptureLedger` flattens
 the party and hero into named counters (`g` gold, `m:`/`w:` troops and wounded, `p:`/`q:` prisoners,
-`i:` items with modifiers, `hp`, `x:` skill xp, `f:` focus, `a:` attributes). `ClientLedger` (in Core)
+`i:` items with modifiers, `e:` worn equipment (one counter per filled slot), `hp`, `x:` skill xp, `f:` focus,
+`a:` attributes). `ClientLedger` (in Core)
 sends local changes as numbered deltas; the host applies them, checking attribute and focus spending
 against the hero's unspent points, and sends back its full state with the last sequence number it
 applied. The client re-applies anything not yet acknowledged, so the player never sees their own action

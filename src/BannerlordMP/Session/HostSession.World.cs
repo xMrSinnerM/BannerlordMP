@@ -3,6 +3,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Game;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.CampaignSystem.Party;
 
 namespace BannerlordMP.Session
@@ -93,6 +94,26 @@ namespace BannerlordMP.Session
                     HandleVote(playerId, vote);
                     return true;
 
+                case MarketRequestMessage request:
+                {
+                    var settlement = WorldBridge.Find<Settlement>(request.SettlementId);
+                    if (WorldBridge.HasMarket(settlement))
+                        Net.Send(peer, WorldBridge.CaptureMarket(settlement));
+                    return true;
+                }
+
+                case MarketChangeMessage change:
+                {
+                    // Friends trust each other, as with world events; the change is kept within what the place has.
+                    var settlement = WorldBridge.Find<Settlement>(change.SettlementId);
+                    if (WorldBridge.HasMarket(settlement))
+                    {
+                        Log.Info($"{NameOf(playerId)} traded in {settlement.StringId}: {change.GoldChange:+#;-#;0} gold, {change.Items.Count} item types");
+                        WorldBridge.Remote(() => WorldBridge.ApplyMarketChange(settlement, change));
+                    }
+                    return true;
+                }
+
                 case PartyInfoRequestMessage request:
                     foreach (var id in request.PartyIds.Take(200))
                     {
@@ -122,6 +143,8 @@ namespace BannerlordMP.Session
         /// A player hero's party whose player is not on the map right now: in a battle or conversation, or
         /// offline. Its food and morale wait for them (a battle takes no time in single player).
         /// </summary>
+        public override bool IsPlayedHero(Hero hero) => base.IsPlayedHero(hero) || IsPlayerHero(hero);
+
         public bool IsPlayerPartyAway(MobileParty party)
         {
             if (party?.LeaderHero == null || !IsPlayerHero(party.LeaderHero))
