@@ -59,6 +59,34 @@ namespace BannerlordMP.Game
             }
         }
 
+        /// <summary>
+        /// Moves the local campaign clock straight to <paramref name="hours"/> (forward only), without running the
+        /// time in between. Only for a joined client, whose world is a mirror: nothing local needs those hours.
+        /// </summary>
+        public static bool JumpToHours(double hours)
+        {
+            try
+            {
+                var campaign = Campaign.Current;
+                var tracker = campaign == null ? null : AccessTools.Property(typeof(Campaign), "MapTimeTracker")?.GetValue(campaign);
+                var ticksField = AccessTools.Field(AccessTools.TypeByName("TaleWorlds.CampaignSystem.MapTimeTracker"), "_numTicks");
+                var timeTicks = AccessTools.Field(typeof(CampaignTime), "_numTicks");
+                if (tracker == null || ticksField == null || timeTicks == null)
+                    return false;
+                var ticksPerHour = (long)timeTicks.GetValue(CampaignTime.Hours(1000f)) / 1000.0;
+                var delta = (long)((hours - NowHours) * ticksPerHour);
+                if (delta <= 0)
+                    return false;
+                ticksField.SetValue(tracker, (long)ticksField.GetValue(tracker) + delta);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not move the campaign clock", e);
+                return false;
+            }
+        }
+
         /// <summary>The time speed number the game's UI uses (0 pause, 1 play, 2 fast forward).</summary>
         public static TimeSpeed FromGameSpeed(int speed)
         {

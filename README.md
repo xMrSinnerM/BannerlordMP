@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.17, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.18, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -16,8 +16,11 @@ hero and party; the host's game runs the world.
 - **Battles happen apart from the world.** When a client enters a battle (or any other 3D scene: town
   streets, taverns, arenas), the world keeps running for everyone else. The parties in that battle are
   frozen on the host until the result comes back.
-- **Fast-forward after battle.** When you leave the battle, your clock is behind the world. Your game
-  fast-forwards (16× by default) and replays what happened while you were away until it catches up.
+- **Time skip after battle.** When you leave the battle, your clock is behind the world. Your game jumps
+  straight to the world's time and shows what happened meanwhile. As in single player, where a battle
+  takes no time, your party eats no food, pays no wages and loses no troops to low morale for the time
+  you spent in the battle. (`SkipTimeAfterBattles=false` in `config.ini` fast-forwards through it instead,
+  16× by default.) A player who is offline doesn't use up food either.
 - **The host is special.** The host's machine simulates the world, so while the **host** is in a battle
   the world pauses for everyone. To avoid that, run a **dedicated host**: a separate game instance (on
   another PC, or a second instance on yours) started with `mp.server`. Nobody plays on it, so it
@@ -115,6 +118,7 @@ happens.
 | Battle results | Losses and destroyed parties applied to the real world |
 | Your money | Your game computes your clan's daily wages and income exactly as single player does; the server never changes your gold on its own |
 | Kingdom votes | When your kingdom must decide something, a pop-up asks for your vote (option, then how strongly to back it, with its influence cost; a ruler picks the outcome). The AI never votes for you: no answer means you abstain |
+| Your party | Only you manage it. On the server, the AI doesn't upgrade your troops, buy or sell for you, recruit, or make troops desert because of a lord's wage limit. Desertion from low morale or an oversized party still happens, as in single player |
 | Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations

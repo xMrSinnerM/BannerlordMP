@@ -118,6 +118,18 @@ namespace BannerlordMP.Session
             hero.Gold = gold;
         }
 
+        /// <summary>
+        /// A player hero's party whose player is not on the map right now: in a battle or conversation, or
+        /// offline. Its food and morale wait for them (a battle takes no time in single player).
+        /// </summary>
+        public bool IsPlayerPartyAway(MobileParty party)
+        {
+            if (party?.LeaderHero == null || !IsPlayerHero(party.LeaderHero))
+                return false;
+            var player = Players.Values.FirstOrDefault(p => p.PartyId == party.StringId);
+            return player == null || _arbiter.IsDetached(player.Id);
+        }
+
         private void RememberPlayerGold(Hero hero)
         {
             if (hero != null)

@@ -710,6 +710,15 @@ namespace BannerlordMP.Session
             SyncRequestedSpeeds();
             // Moved by its owner over the network, but AI on the host may still hunt it.
             GameBridge.Freeze(party, ignoredByOthers: false);
+            // A lord's wage limit makes troops desert; a player's party has none (see PlayerPartyPatches).
+            try
+            {
+                party.SetWagePaymentLimit(Campaign.Current.Models.PartyWageModel.MaxWagePaymentLimit);
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not lift the wage limit of " + party.StringId, e);
+            }
 
             Net.Send(peer, new WelcomeMessage
             {

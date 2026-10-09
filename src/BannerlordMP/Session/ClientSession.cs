@@ -47,6 +47,8 @@ namespace BannerlordMP.Session
         private bool _welcomed;
         private PlayerActivity _activity = PlayerActivity.Map;
         private bool _detached;
+        /// <summary>Just back on the map from a battle or conversation: the time missed is skipped without upkeep.</summary>
+        private bool _justReturned;
         private bool _hostDetached;
         private SyncAction _lastAction = SyncAction.FollowHost;
         private float _partyStateTimer;
@@ -96,6 +98,7 @@ namespace BannerlordMP.Session
             if (_detached)
                 return; // In a mission: the local campaign is not ticking, the world goes on without us.
 
+            SkipAheadIfBehind();
             var decision = _sync.Update(GameBridge.NowHours, RealSeconds);
             GameBridge.SetLocalTime(decision.Speed, decision.SpeedUpMultiplier);
             ReportSyncChange(decision);
@@ -363,6 +366,8 @@ namespace BannerlordMP.Session
 
             if (!wasDetached && _detached)
                 _smoother.Clear();
+            if (wasDetached && !_detached)
+                _justReturned = true;
 
             if (!wasDetached && _detached && activity == PlayerActivity.Mission && MapEvent.PlayerMapEvent != null)
             {
@@ -375,6 +380,28 @@ namespace BannerlordMP.Session
                 }
                 Net.SendToAll(started);
             }
+        }
+
+        /// <summary>
+        /// Instead of fast-forwarding through the hours the world moved on without us, jump to its time. After a
+        /// battle those hours cost nothing: in single player a battle takes no time at all.
+        /// </summary>
+        private void SkipAheadIfBehind()
+        {
+            var returned = _justReturned;
+            if (!Config.SkipTimeAfterBattles || !_sync.HasHostTime)
+                return;
+            _justReturned = false;
+            var hostHours = _sync.EstimateHostHours(RealSeconds);
+            var behind = hostHours - GameBridge.NowHours;
+            if (behind <= Config.CatchUpThresholdHours || !GameBridge.JumpToHours(hostHours))
+                return; // Not behind, or the clock could not be moved: the normal fast-forward handles it.
+
+            _smoother.Clear();
+            if (returned)
+                _financeDay = (int)Math.Floor(GameBridge.NowHours / 24);
+            Log.Info($"Client: skipped {behind:0.00} hours to the world's time{(returned ? " (no upkeep, back from a battle)" : "")}");
+            Log.Notify(behind >= 1 ? $"Skipped {behind:0} hours to rejoin the world." : "Rejoined the world.");
         }
 
         private void ReportSyncChange(SyncDecision decision)

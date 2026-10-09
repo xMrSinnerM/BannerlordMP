@@ -24,6 +24,11 @@ namespace BannerlordMP
         public float SnapshotRateHz = 4f;
         public float CatchUpMultiplier = 16f;
         public double CatchUpThresholdHours = 0.5;
+        /// <summary>
+        /// A player who falls behind (back from a battle) jumps straight to the world's time instead of
+        /// fast-forwarding through it, and their party pays no upkeep for the time spent in the battle.
+        /// </summary>
+        public bool SkipTimeAfterBattles = true;
         /// <summary>Server autosave interval in real minutes; 0 turns it off.</summary>
         public float AutoSaveMinutes = 5f;
 
@@ -123,6 +128,7 @@ namespace BannerlordMP
                     config.CatchUpMultiplier = cm;
                 if (values.TryGetValue("AutoSaveMinutes", out var autosave) && float.TryParse(autosave, NumberStyles.Float, CultureInfo.InvariantCulture, out var asm) && asm >= 0)
                     config.AutoSaveMinutes = asm;
+                config.SkipTimeAfterBattles = Flag(values, "SkipTimeAfterBattles", config.SkipTimeAfterBattles);
                 config.ClientMirrorWorld = Flag(values, "ClientMirrorWorld", config.ClientMirrorWorld);
                 config.ClientPuppetParties = Flag(values, "ClientPuppetParties", config.ClientPuppetParties);
                 config.ClientMirrorSpawns = Flag(values, "ClientMirrorSpawns", config.ClientMirrorSpawns);

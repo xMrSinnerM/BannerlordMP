@@ -99,7 +99,7 @@ undone and then redone. Reconciling waits while the player is in a battle.
     in consensus mode, the world stays paused while no client is connected, and its own party is
     parked and excluded from encounters, so the host never enters a mission.
 
-## Separate battles and fast-forward
+## Separate battles and the time skip
 
 ```
 client enters battle ──► ActivityChanged(Mission) + BattleStarted(party ids)
@@ -107,11 +107,18 @@ client enters battle ──► ActivityChanged(Mission) + BattleStarted(party id
                          client: campaign not ticking; snapshots/destroys → CatchUpBuffer
 client finishes      ──► BattleResult (rosters, destroyed, gold)
                          host: apply, release frozen parties
-client back on map   ──► TimeSyncController sees the clock N hours behind → CatchUp
-                         local campaign runs UnstoppableFastForward × CatchUpMultiplier
-                         CatchUpBuffer.DrainUntil(localTime) replays world updates in order
+client back on map   ──► clock N hours behind the host
+                         SkipTimeAfterBattles (default): move the campaign clock straight to host time
+                           (MapTimeTracker ticks), no upkeep for those days, replay the whole buffer
+                         otherwise: TimeSyncController → CatchUp, UnstoppableFastForward × CatchUpMultiplier,
+                           CatchUpBuffer.DrainUntil(localTime) replays world updates in order
                          within tolerance → FollowHost
 ```
+
+While a player is in a battle or conversation, or offline, the host doesn't let their party eat or desert
+from low morale (`PlayerPartyPatches.AwayUpkeep`), and the client skips that time's clan finances, so a
+battle costs no campaign time, as in single player. The host also keeps its lord-party AI off players'
+parties: no wage-limit desertion, auto-upgrades, food/horse buying, loot/prisoner selling or recruiting.
 
 `TimeSyncController` extrapolates host time from the observed rate between updates, with hysteresis
 (fall `CatchUpThresholdHours` behind to start catching up, get within `ToleranceHours` to stop). A client
