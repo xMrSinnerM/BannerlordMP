@@ -240,13 +240,15 @@ namespace BannerlordMP.Session
                 if (player.Id == HostPlayerId || _arbiter.IsDetached(player.Id))
                     continue;
                 var target = Parties.Find(player.PartyId, RealSeconds);
-                if (target == null || !target.IsActive || target.CurrentSettlement != null || target.MapEvent != null || target.MapFaction == null)
-                    continue;
+                if (target == null || !target.IsActive || target.CurrentSettlement != null || target.MapEvent != null || target.MapFaction == null
+                    || target.BesiegedSettlement != null || target.SiegeEvent != null)
+                    continue; // In a town, a battle or a siege of their own: nobody catches them on the map.
                 var center = target.Position.ToVec2();
                 foreach (var chaser in MobileParty.All)
                 {
                     if (chaser == null || chaser == target || !chaser.IsActive || chaser.MapEvent != null || chaser.CurrentSettlement != null
-                        || chaser.MapFaction == null || IsRemotePlayerParty(chaser) || IsBattleFrozen(chaser))
+                        || chaser.MapFaction == null || IsRemotePlayerParty(chaser) || IsBattleFrozen(chaser) || chaser.ShouldBeIgnored
+                        || chaser.BesiegedSettlement != null || chaser.MemberRoster.TotalHealthyCount <= 0)
                         continue;
                     if (chaser.TargetParty != target && chaser.ShortTermTargetParty != target)
                         continue;

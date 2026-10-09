@@ -102,6 +102,7 @@ namespace BannerlordMP.Session
                 return; // In a mission: the local campaign is not ticking, the world goes on without us.
 
             SkipAheadIfBehind();
+            TickEncounterGrace();
             var decision = _sync.Update(GameBridge.NowHours, RealSeconds);
             GameBridge.SetLocalTime(decision.Speed, decision.SpeedUpMultiplier);
             ReportSyncChange(decision);
@@ -190,6 +191,51 @@ namespace BannerlordMP.Session
                 return;
             WorldBridge.Remote(() => WorldBridge.ApplyMarketState(settlement, market));
             _markets[settlement.StringId] = WorldBridge.CaptureMarket(settlement);
+        }
+
+        /// <summary>After an encounter with a party ends (won, fled, or left), its "caught you" is ignored this long.</summary>
+        private const double EncounterGraceSeconds = 45;
+        private readonly Dictionary<string, double> _encounterGraceUntil = new Dictionary<string, double>();
+        private string _encounterWith;
+
+        private void HandleEncounterRequest(string attackerId)
+        {
+            if (_encounterGraceUntil.TryGetValue(attackerId, out var until) && RealSeconds < until)
+                return;
+            var attacker = Parties.Find(attackerId, RealSeconds);
+            var reason = WorldBridge.WhyNoEncounter(attacker);
+            if (reason == null && !GameBridge.IsOnMapWithoutMenu())
+                reason = "a menu or encounter is open";
+            if (reason == null)
+            {
+                try
+                {
+                    if (WorldBridge.StartEncounterWith(attacker))
+                    {
+                        _encounterWith = attackerId;
+                        Log.Info($"Client: {attackerId} caught us; encounter started");
+                        return;
+                    }
+                    reason = "the game refused";
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Could not start the encounter with " + attackerId, e);
+                    reason = "error";
+                }
+            }
+            // Don't ask again for a while: the host keeps reporting the catch until its world agrees with ours.
+            _encounterGraceUntil[attackerId] = RealSeconds + EncounterGraceSeconds / 3;
+            Log.Info($"Client: {attackerId} caught us on the host; ignored ({reason})");
+        }
+
+        /// <summary>Starts the grace period once the encounter we started is over.</summary>
+        private void TickEncounterGrace()
+        {
+            if (_encounterWith == null || TaleWorlds.CampaignSystem.Encounters.PlayerEncounter.Current != null || _detached)
+                return;
+            _encounterGraceUntil[_encounterWith] = RealSeconds + EncounterGraceSeconds;
+            _encounterWith = null;
         }
 
         public override void OnLocalPartyDestroyed(MobileParty party)
@@ -318,9 +364,7 @@ namespace BannerlordMP.Session
                     // Also while catching up on time: the enemy is here now. Not in a battle or conversation.
                     if (_detached)
                         break;
-                    var attacker = Parties.Find(encounter.AttackerPartyId, RealSeconds);
-                    var started = WorldBridge.StartEncounterWith(attacker);
-                    Log.Info($"Client: {encounter.AttackerPartyId} caught us; battle {(started ? "started" : "not started (" + (attacker == null ? "party unknown here" : "busy: menu, town or encounter") + ")")}");
+                    HandleEncounterRequest(encounter.AttackerPartyId);
                     break;
 
                 case DecisionVoteRequestMessage voteRequest:

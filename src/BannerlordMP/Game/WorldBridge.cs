@@ -385,6 +385,31 @@ namespace BannerlordMP.Game
         }
 
         /// <summary>Client: the host says an AI party caught us. Start the encounter here, as if it had happened locally.</summary>
+        /// <summary>
+        /// Why the host's "they caught you" cannot be acted on here, or null if it can. The two worlds can differ
+        /// for a moment (a party beaten in our siege still exists on the host), and starting an encounter with a
+        /// party that is gone here kept the attack menu coming back and then crashed the game.
+        /// </summary>
+        public static string WhyNoEncounter(MobileParty attacker)
+        {
+            var main = MobileParty.MainParty;
+            if (attacker == null)
+                return "party unknown here";
+            if (main == null || main.MapEvent != null || main.CurrentSettlement != null || main.BesiegedSettlement != null || main.SiegeEvent != null)
+                return "we are busy (battle, town or siege)";
+            if (!attacker.IsActive || attacker.ShouldBeIgnored)
+                return "that party is gone here";
+            if (attacker.MapEvent != null || attacker.CurrentSettlement != null || attacker.BesiegedSettlement != null)
+                return "that party is busy (battle, town or siege)";
+            if (attacker.MemberRoster == null || attacker.MemberRoster.TotalHealthyCount <= 0)
+                return "that party has no troops here";
+            if (attacker.MapFaction == null || main.MapFaction == null || !FactionManager.IsAtWarAgainstFaction(attacker.MapFaction, main.MapFaction))
+                return "not at war here";
+            if (attacker.Position.ToVec2().DistanceSquared(main.Position.ToVec2()) > 3f * 3f)
+                return "too far away here";
+            return null;
+        }
+
         public static bool StartEncounterWith(MobileParty attacker)
         {
             var main = MobileParty.MainParty;
