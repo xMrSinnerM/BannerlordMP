@@ -56,6 +56,10 @@ namespace BannerlordMP.Patches
 
             private static bool Prefix(MobileParty __0)
             {
+                // Joined player: the server feeds their party and sends the result through the ledger. Eating here
+                // as well counted every meal twice (the local drop went to the server as the player's own change).
+                if (MpSession.Current is ClientSession && __0 != null && __0 == MobileParty.MainParty)
+                    return false;
                 return !(MpSession.Current is HostSession host && host.IsPlayerPartyAway(__0));
             }
         }

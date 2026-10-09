@@ -708,8 +708,19 @@ namespace BannerlordMP.Session
             };
             _arbiter.AddPlayer(playerId);
             SyncRequestedSpeeds();
-            // Moved by its owner over the network, but AI on the host may still hunt it.
+            // Moved by its owner over the network, but AI on the host may still hunt it: its AI stays on (the
+            // game's AI does not chase parties whose AI is off) but it makes no decisions and holds still here.
             GameBridge.Freeze(party, ignoredByOthers: false);
+            try
+            {
+                party.Ai.EnableAi();
+                party.Ai.SetDoNotMakeNewDecisions(true);
+                party.SetMoveModeHold();
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not make " + party.StringId + " a target for the AI", e);
+            }
             // A lord's wage limit makes troops desert; a player's party has none (see PlayerPartyPatches).
             try
             {

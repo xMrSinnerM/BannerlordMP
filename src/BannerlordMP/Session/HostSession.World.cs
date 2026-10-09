@@ -22,6 +22,10 @@ namespace BannerlordMP.Session
         /// <summary>Player heroes' gold as their owners' games last set it. Nothing on the host may change it.</summary>
         private readonly Dictionary<string, int> _playerGold = new Dictionary<string, int>();
         private float _worldTimer;
+        private float _pursuitTimer;
+        /// <summary>How close (map units) a chasing enemy must get before the player's game starts the battle.</summary>
+        private const float CatchDistance = 0.6f;
+        private const float PursuitCheckInterval = 0.25f;
 
         public override void OnLocalWorldEvent(WorldEventKind kind, string a, string b)
         {
@@ -49,6 +53,13 @@ namespace BannerlordMP.Session
                         SendToPlayers(WorldBridge.DescribeParty(party, GameBridge.NowHours));
                 }
                 _spawnQueue.Clear();
+            }
+
+            _pursuitTimer += dt;
+            if (_pursuitTimer >= PursuitCheckInterval)
+            {
+                _pursuitTimer = 0;
+                CheckPursuits();
             }
 
             _worldTimer += dt;
@@ -218,6 +229,37 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>
+        /// Enemies chasing a player. The host's game never starts a battle with a player's party itself (it is fought
+        /// on the player's machine), and on a server the chaser does not always "arrive" in the game's sense. So
+        /// any hostile party that targets a player and gets within reach asks that player's game to start it.
+        /// </summary>
+        private void CheckPursuits()
+        {
+            foreach (var player in Players.Values)
+            {
+                if (player.Id == HostPlayerId || _arbiter.IsDetached(player.Id))
+                    continue;
+                var target = Parties.Find(player.PartyId, RealSeconds);
+                if (target == null || !target.IsActive || target.CurrentSettlement != null || target.MapEvent != null || target.MapFaction == null)
+                    continue;
+                var center = target.Position.ToVec2();
+                foreach (var chaser in MobileParty.All)
+                {
+                    if (chaser == null || chaser == target || !chaser.IsActive || chaser.MapEvent != null || chaser.CurrentSettlement != null
+                        || chaser.MapFaction == null || IsRemotePlayerParty(chaser) || IsBattleFrozen(chaser))
+                        continue;
+                    if (chaser.TargetParty != target && chaser.ShortTermTargetParty != target)
+                        continue;
+                    if (!FactionManager.IsAtWarAgainstFaction(chaser.MapFaction, target.MapFaction))
+                        continue;
+                    if (chaser.Position.ToVec2().DistanceSquared(center) > CatchDistance * CatchDistance)
+                        continue;
+                    RequestEncounter(chaser, target);
+                }
+            }
+        }
+
+        /// <summary>
         /// An AI party on the host caught an online player's party. The battle belongs on that player's machine,
         /// so ask it to start the encounter there.
         /// </summary>
@@ -230,6 +272,7 @@ namespace BannerlordMP.Session
             if (_encounterRequested.TryGetValue(key, out var at) && RealSeconds - at < EncounterRequestCooldownSeconds)
                 return;
             _encounterRequested[key] = RealSeconds;
+            Log.Info($"{attacker.StringId} ({attacker.MapFaction?.StringId}) caught {player.Name}; asking their game to start the battle");
             var peer = _peers.FirstOrDefault(p => p.Value.PlayerId == player.Id).Key;
             Net.Send(peer, new EncounterRequestMessage { AttackerPartyId = attacker.StringId });
         }

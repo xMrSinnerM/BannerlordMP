@@ -315,8 +315,12 @@ namespace BannerlordMP.Session
                     break;
 
                 case EncounterRequestMessage encounter when Config.ClientAcceptEncounterRequests:
-                    if (!_detached && !Buffering)
-                        WorldBridge.StartEncounterWith(Parties.Find(encounter.AttackerPartyId, RealSeconds));
+                    // Also while catching up on time: the enemy is here now. Not in a battle or conversation.
+                    if (_detached)
+                        break;
+                    var attacker = Parties.Find(encounter.AttackerPartyId, RealSeconds);
+                    var started = WorldBridge.StartEncounterWith(attacker);
+                    Log.Info($"Client: {encounter.AttackerPartyId} caught us; battle {(started ? "started" : "not started (" + (attacker == null ? "party unknown here" : "busy: menu, town or encounter") + ")")}");
                     break;
 
                 case DecisionVoteRequestMessage voteRequest:
