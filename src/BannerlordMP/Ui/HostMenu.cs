@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Game;
 using BannerlordMP.Steam;
+using TaleWorlds.Core;
+using TaleWorlds.SaveSystem;
 
 namespace BannerlordMP.Ui
 {
@@ -45,7 +47,37 @@ namespace BannerlordMP.Ui
             var world = MenuMemory.Get("Host.World");
             if (world != NewCampaign && !saves.Contains(world))
                 world = saves.FirstOrDefault() ?? NewCampaign; // The server autosave sorts first.
-            ShowHub(config, world);
+            // Which world to run is the one choice that matters most: ask it first, every time.
+            ChooseWorld(world, chosen => ShowHub(config, chosen), null);
+        }
+
+        /// <summary>Every save with its date and in-game day, server saves first; the last used one is marked.</summary>
+        private static void ChooseWorld(string current, Action<string> chosen, Action back)
+        {
+            var choices = new List<Choice<string>>();
+            foreach (var save in GameBridge.ListSaves())
+            {
+                choices.Add(new Choice<string>(save.Name, DescribeWorld(save.Name) + DescribeSaveTime(save) + (save.Name == current ? "   << last used" : ""),
+                    hint: IsServerSave(save.Name) ? "Has every player hero and their progress."
+                        : "If players joined this world before, pick a server save instead, or their heroes will be missing."));
+            }
+            choices.Add(new Choice<string>(NewCampaign, DescribeWorld(NewCampaign) + (current == NewCampaign ? "   << last used" : ""),
+                hint: "Create the host's character, then the server starts."));
+            Dialogs.Choose("Host Co-op Campaign", "Which save should the server load?", choices, chosen, back, "Load");
+        }
+
+        private static string DescribeSaveTime(SaveGameFileInfo save)
+        {
+            try
+            {
+                var saved = TaleWorlds.Core.MetaDataExtensions.GetCreationTime(save.MetaData);
+                var day = TaleWorlds.CampaignSystem.Extensions.MetaDataExtensions.GetDayLong(save.MetaData);
+                return $"   ({saved:yyyy-MM-dd HH:mm}, day {day:0})";
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static void ShowHub(MpConfig config, string world)
@@ -74,14 +106,8 @@ namespace BannerlordMP.Ui
                     break;
 
                 case Item.World:
-                {
-                    var choices = new List<Choice<string>> { new Choice<string>(NewCampaign, DescribeWorld(NewCampaign), hint: "Create the host's character, then the server starts.") };
-                    choices.AddRange(GameBridge.ListSaves().Select(s => new Choice<string>(s.Name, DescribeWorld(s.Name),
-                        hint: IsServerSave(s.Name) ? "Has every player hero and their progress."
-                            : "If players joined this world before, pick a server save instead, or their heroes will be missing.")));
-                    Dialogs.Choose("World", "Which campaign should the server run?", choices, chosen => ShowHub(config, chosen), back);
+                    ChooseWorld(world, chosen => ShowHub(config, chosen), back);
                     break;
-                }
 
                 case Item.Mode:
                     Dialogs.Choose("Mode", "", new List<Choice<bool>>

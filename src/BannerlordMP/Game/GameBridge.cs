@@ -533,7 +533,20 @@ namespace BannerlordMP.Game
                 .Where(s => !s.IsCorrupted && !s.Name.StartsWith("BannerlordMP_Join"))
                 .OrderByDescending(s => s.Name == AutoSaveName)
                 .ThenByDescending(s => s.Name == ServerSaveName)
+                .ThenByDescending(s => SaveTime(s))
                 .ToList();
+        }
+
+        private static DateTime SaveTime(SaveGameFileInfo save)
+        {
+            try
+            {
+                return TaleWorlds.Core.MetaDataExtensions.GetCreationTime(save.MetaData);
+            }
+            catch
+            {
+                return DateTime.MinValue;
+            }
         }
 
         private static IEnumerable<PlatformFilePath> SaveFileCandidates(string saveName)

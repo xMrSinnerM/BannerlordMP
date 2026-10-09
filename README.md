@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.22, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.23, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -39,10 +39,12 @@ hero and party; the host's game runs the world.
 
 Everything is in the main menu.
 
-**Host Co-op Campaign** opens one screen with every setting: world, mode (play on this PC or dedicated
-server), server name, password, number of player heroes, and who can find it (Steam friends, Steam invites,
-public, or LAN/IP only). Click a line to change it, then **Start server**. Your choices are remembered, and
-the world defaults to **BannerlordMP_Autosave**, the latest server save with every player hero in it. With
+**Host Co-op Campaign** first asks which save to load: every save with its date and in-game day, server
+saves first (**BannerlordMP_Autosave** is the latest one, with every player hero in it), the one you used
+last marked, or a new sandbox campaign. Then one screen shows every setting: world, mode (play on this PC or
+dedicated server), server name, password, number of player heroes, and who can find it (Steam friends,
+Steam invites, public, or LAN/IP only). Click a line to change it, then **Start server**. Your choices are
+remembered. With
 Steam, you're offered the invite dialog once the server is up.
 
 **Join Co-op Campaign** opens the server browser: **Rejoin** your last server at the top, then Steam friends'
