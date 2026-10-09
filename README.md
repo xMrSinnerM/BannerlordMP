@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.21, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.22, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -153,6 +153,7 @@ happens.
   host still needs a full game window; a headless server is not possible yet.
 - **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins, and a
   `BannerlordMP_Autosave` written every 5 minutes (`AutoSaveMinutes` in `config.ini`). Joined players'
-  games don't autosave: the server's save is the real one.
+  games don't autosave: the server's save is the real one. After the server has saved once, the host menu
+  picks `BannerlordMP_Autosave` as the world next time, and "Exit to main menu" on the server saves first.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it works and the roadmap.

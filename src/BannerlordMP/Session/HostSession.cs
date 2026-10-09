@@ -547,6 +547,34 @@ namespace BannerlordMP.Session
             }
         }
 
+        private bool _exitAfterSave;
+
+        /// <summary>
+        /// The host chose to leave the campaign. Saves the world first, then leaves (the game's own exit is held
+        /// back until then). False when there is nothing to wait for: the exit goes ahead at once.
+        /// </summary>
+        public bool SaveBeforeExit()
+        {
+            if (_exitAfterSave || _saving || Campaign.Current == null)
+                return false;
+            _exitAfterSave = true;
+            Log.Notify("Saving the world before leaving... (exit again to leave without waiting)");
+            if (_autoSaving)
+                return true; // An autosave is already being written; leave when it is done.
+            _autoSaving = true;
+            try
+            {
+                GameBridge.SaveWorld(GameBridge.AutoSaveName);
+                return true;
+            }
+            catch (Exception e)
+            {
+                _autoSaving = false;
+                Log.Error("Could not save before leaving", e);
+                return false; // Leave anyway; the last autosave stays.
+            }
+        }
+
         /// <summary>Saves the world now (host command or a player leaving).</summary>
         public void SaveSoon() => _nextAutoSaveAt = RealSeconds;
 
@@ -604,14 +632,25 @@ namespace BannerlordMP.Session
             {
                 _autoSaving = false;
                 if (success)
-                    Log.Notify("World autosaved.");
+                {
+                    Log.Notify($"World saved as {GameBridge.AutoSaveName}.");
+                    // The world now lives on in this save: host it next time, not the save the server started from
+                    // (which the menu would otherwise remember, making progress look lost).
+                    Ui.MenuMemory.Set("Host.World", GameBridge.AutoSaveName);
+                }
                 else
+                {
                     Log.Notify("Autosave failed. See BannerlordMP.log.");
+                }
+                if (_exitAfterSave)
+                    TaleWorlds.MountAndBlade.MBGameManager.EndGame(); // Now leave, as the host asked.
                 return;
             }
             if (!_saving)
                 return;
             _saving = false;
+            if (success)
+                Ui.MenuMemory.Set("Host.World", GameBridge.ServerSaveName);
 
             byte[] data = null;
             string error = success ? null : "saving failed";
