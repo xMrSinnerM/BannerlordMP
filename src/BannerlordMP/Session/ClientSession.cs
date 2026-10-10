@@ -705,7 +705,7 @@ namespace BannerlordMP.Session
             var predicted = _ledger.Reconcile(state.AckSeq, state.State);
             var correction = Ledger.Diff(WorldBridge.CaptureLedger(main), predicted);
             if (correction.Count > 0)
-                WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(main, correction, onHost: false));
+                WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(main, correction));
             _ledger.Rebase(WorldBridge.CaptureLedger(main));
         }
 
