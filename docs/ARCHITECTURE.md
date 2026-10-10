@@ -73,6 +73,8 @@ produced them.** Menus and dialogue run locally; their effects on the world trav
 | Town and village markets | Host | `MarketRequest` on entering → `MarketState` (stock, gold, prosperity, category supply/demand); `MarketChange` (the diff) on leaving |
 | AI attacking a player | Host detects, client fights | `EncounterRequest` → the client starts the encounter locally |
 | A battle a client fights | That client | `BattleStarted` (host freezes the parties) → `BattleResult` (host applies enemy losses, destroys losers) |
+| A clan party a player creates | Created by the client, then led by the host's AI | The client sends `PartySpawned` for it and makes its copy a puppet; the host creates the real party with the same id (`WorldBridge.CreatePlayerClanParty`) and mirrors it like any other |
+| A player's own army | The player creates, calls, dismisses and disbands; the host gathers and attaches | `WorldEvent` ArmyCreated / ArmyPartyJoined (the client resends the whole army when it changes) / ArmyPartyAttached / ArmyPartyLeft / ArmyDispersed. Influence is paid on the client only (ledger). The army's hourly turn (cohesion, dispersal) runs on the client; the host skips it (`ArmyPatches`) and breaks the army up when its leader leaves |
 | AI-vs-AI battles | Host | Clients can't start encounters that don't involve their own party |
 
 ### The ledger

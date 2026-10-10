@@ -371,6 +371,47 @@ namespace BannerlordMP.Game
             }
         }
 
+        /// <summary>
+        /// Host: a player created a party for one of their clan's heroes on their machine (clan screen). The real party
+        /// is made here as a lord party of that hero, with the id, position and troops their game gave it, so their
+        /// copy becomes its mirror. From then on the host's AI leads it, as single player's AI leads clan parties.
+        /// </summary>
+        /// <returns>Null when created, otherwise why not.</returns>
+        public static string CreatePlayerClanParty(Clan clan, PartySpawnedMessage message)
+        {
+            var leader = GameBridge.FindHero(message.LeaderHeroId);
+            if (clan == null || leader == null || leader.Clan != clan || leader == clan.Leader)
+                return "its leader is not a hero of your clan here";
+            if (!leader.IsAlive || leader.IsPrisoner)
+                return $"{leader.Name} is dead or a prisoner here";
+            var existing = GameBridge.FindParty(message.PartyId);
+            if (existing != null)
+                return existing.LeaderHero == leader ? null : "its id is already used by another party";
+            if (leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader)
+                return $"{leader.Name} already leads a party here";
+
+            string problem = null;
+            Remote(() =>
+            {
+                try
+                {
+                    // Here the hero is usually still a member of the player's party (heroes are not in the ledger).
+                    leader.PartyBelongedTo?.MemberRoster.AddToCounts(leader.CharacterObject, -1, false, 0, 0, true, -1);
+                    var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
+                    var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
+                    var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    GameBridge.ApplyRoster(party.MemberRoster, message.Members);
+                    GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Creating clan party {message.PartyId} for {leader.StringId} failed", e);
+                    problem = "the game refused";
+                }
+            });
+            return problem;
+        }
+
         public static void ApplyRosters(MobileParty party, List<TroopCount> members, List<TroopCount> prisoners)
         {
             if (party == null || party == MobileParty.MainParty)
@@ -640,6 +681,13 @@ namespace BannerlordMP.Game
                                 KillCharacterAction.ApplyByBattle(victim, GameBridge.FindHero(message.B), false);
                             break;
                         }
+                        case WorldEventKind.ArmyCreated:
+                        case WorldEventKind.ArmyPartyJoined:
+                        case WorldEventKind.ArmyPartyAttached:
+                        case WorldEventKind.ArmyPartyLeft:
+                        case WorldEventKind.ArmyDispersed:
+                            ApplyArmyEvent(message);
+                            break;
                     }
                 }
                 catch (Exception e)
@@ -647,6 +695,116 @@ namespace BannerlordMP.Game
                     Log.Error("Could not apply world event " + message, e);
                 }
             });
+        }
+
+        // ----- Armies -----------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Players' own armies. A player makes an army on their machine; the host makes the same army in the real
+        /// world, where its AI walks the called parties to the player's party and attaches them. Each attachment
+        /// comes back so the player's game attaches them too, and they move with the player. A client only ever
+        /// changes its own army here: other armies are just parties the host moves.
+        /// </summary>
+        private static void ApplyArmyEvent(WorldEventMessage message)
+        {
+            var onClient = Session.MpSession.Current is Session.ClientSession;
+            switch (message.Kind)
+            {
+                case WorldEventKind.ArmyCreated:
+                {
+                    // The client that proposed it made this army itself; only the host has to create it.
+                    var leader = GameBridge.FindHero(message.A);
+                    var leaderParty = leader?.PartyBelongedTo;
+                    var kingdom = leader?.Clan?.Kingdom;
+                    if (onClient || leaderParty == null || leaderParty.LeaderHero != leader || leaderParty.Army != null || kingdom == null)
+                        break;
+                    var parts = (message.B ?? string.Empty).Split('|');
+                    var type = int.TryParse(parts[0], out var t) && Enum.IsDefined(typeof(Army.ArmyTypes), t) ? (Army.ArmyTypes)t : Army.ArmyTypes.Patrolling;
+                    var target = parts.Length > 1 ? Find<Settlement>(parts[1]) : null;
+                    KeepInfluence(leader.Clan, () => kingdom.CreateArmy(leader, target, type, new MBList<MobileParty>()));
+                    Log.Info($"Army of {leader.StringId} created ({type}, target {target?.StringId ?? "none"}): {leaderParty.Army != null}");
+                    break;
+                }
+                case WorldEventKind.ArmyPartyJoined:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = leaderParty?.Army;
+                    if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty || party.Army == army)
+                        break;
+                    if (party.Army != null || (onClient && leaderParty != MobileParty.MainParty))
+                        break;
+                    KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
+                    if (onClient)
+                        MakePuppet(party);
+                    else if (party.MapEvent == null)
+                        party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                    break;
+                }
+                case WorldEventKind.ArmyPartyAttached:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = leaderParty?.Army;
+                    if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty
+                        || party.AttachedTo == leaderParty || party.MapEvent != null)
+                        break;
+                    if (onClient && leaderParty != MobileParty.MainParty)
+                        break;
+                    if (party.Army != army)
+                    {
+                        if (party.Army != null)
+                            break;
+                        KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
+                    }
+                    army.AddPartyToMergedParties(party);
+                    break;
+                }
+                case WorldEventKind.ArmyPartyLeft:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = party?.Army;
+                    // The leader leaving is the army breaking up, which arrives as its own event.
+                    if (army == null || army.LeaderParty != leaderParty || party == leaderParty)
+                        break;
+                    if (onClient && leaderParty != MobileParty.MainParty)
+                        break;
+                    party.Army = null;
+                    if (party.AttachedTo != null)
+                        party.AttachedTo = null;
+                    if (onClient)
+                        MakePuppet(party);
+                    break;
+                }
+                case WorldEventKind.ArmyDispersed:
+                {
+                    var leaderParty = GameBridge.FindParty(message.A);
+                    var army = leaderParty?.Army;
+                    if (army == null || army.LeaderParty != leaderParty || (onClient && leaderParty != MobileParty.MainParty))
+                        break;
+                    var members = army.Parties.Where(p => p != leaderParty).ToList();
+                    DisbandArmyAction.ApplyByUnknownReason(army);
+                    if (onClient)
+                        members.ForEach(MakePuppet);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>Influence spent on an army is paid on the player's machine and arrives through the ledger, never twice.</summary>
+        private static void KeepInfluence(Clan clan, Action action)
+        {
+            var influence = clan?.Influence ?? 0f;
+            try
+            {
+                action();
+            }
+            finally
+            {
+                if (clan != null)
+                    clan.Influence = influence;
+            }
         }
 
         public static IFaction FindFaction(string id)

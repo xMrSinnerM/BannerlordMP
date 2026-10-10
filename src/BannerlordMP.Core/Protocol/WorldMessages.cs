@@ -3,7 +3,10 @@ using System.IO;
 
 namespace BannerlordMP.Core.Protocol
 {
-    /// <summary>Host → clients: a party now exists in the world. Clients create a matching party to mirror it.</summary>
+    /// <summary>
+    /// Host → clients: a party now exists in the world. Clients create a matching party to mirror it.
+    /// Client → host: the player created a party for one of their clan's heroes; the host creates the real one.
+    /// </summary>
     public sealed class PartySpawnedMessage : INetMessage
     {
         public MessageType Type => MessageType.PartySpawned;
@@ -96,6 +99,16 @@ namespace BannerlordMP.Core.Protocol
         HeroCaptured = 8,
         /// <summary>A = hero freed (released, ransomed, escaped...).</summary>
         HeroReleased = 9,
+        /// <summary>A = army leader hero, B = "armyType|targetSettlement" (settlement may be empty).</summary>
+        ArmyCreated = 10,
+        /// <summary>A = party called to the army, B = the army's leader party.</summary>
+        ArmyPartyJoined = 11,
+        /// <summary>A = party that reached the army and now moves with it, B = the army's leader party.</summary>
+        ArmyPartyAttached = 12,
+        /// <summary>A = party that left the army, B = the army's leader party.</summary>
+        ArmyPartyLeft = 13,
+        /// <summary>A = leader party of the army that broke up.</summary>
+        ArmyDispersed = 14,
     }
 
     /// <summary>

@@ -888,8 +888,12 @@ namespace BannerlordMP.Session
             var player = Players[playerId];
             Players.Remove(playerId);
             OnPlayerLeftWorld(playerId);
-            // The hero stays where it is, frozen and untouchable, until its owner comes back.
-            GameBridge.Freeze(GameBridge.FindParty(player.PartyId));
+            // The hero stays where it is, frozen and untouchable, until its owner comes back. Their army breaks up
+            // first: the lords in it would otherwise wait, frozen with it, until they return.
+            var leftParty = GameBridge.FindParty(player.PartyId);
+            if (leftParty?.Army != null && leftParty.Army.LeaderParty == leftParty)
+                WorldBridge.Remote(() => TaleWorlds.CampaignSystem.Actions.DisbandArmyAction.ApplyByUnknownReason(leftParty.Army));
+            GameBridge.Freeze(leftParty);
             if (_arbiter.RemovePlayer(playerId))
                 BroadcastTimeState();
             BroadcastPlayerList();

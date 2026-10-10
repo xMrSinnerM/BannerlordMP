@@ -36,6 +36,16 @@ namespace BannerlordMP.Session
             SendToPlayers(message);
         }
 
+        public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
+        {
+            // Only joined players' own armies are mirrored; every other army is just parties the snapshots move.
+            if (leader == MobileParty.MainParty || !IsPlayerParty(leader))
+                return;
+            var message = DescribeArmyEvent(kind, leader, party);
+            Log.Info("Player army changed on the host, relaying: " + message);
+            SendToPlayers(message);
+        }
+
         public override void OnLocalPartyCreated(MobileParty party)
         {
             // Parties are filled in (troops, position) after the creation event; describe them next frame.
@@ -121,6 +131,23 @@ namespace BannerlordMP.Session
                     {
                         Log.Info($"{NameOf(playerId)} traded in {settlement.StringId}: {change.GoldChange:+#;-#;0} gold, {change.Items.Count} item types");
                         WorldBridge.Remote(() => WorldBridge.ApplyMarketChange(settlement, change));
+                    }
+                    return true;
+                }
+
+                case PartySpawnedMessage created:
+                {
+                    // The player made a new party for one of their clan's heroes (clan screen).
+                    var clan = Parties.Find(Players[playerId].PartyId, RealSeconds)?.LeaderHero?.Clan;
+                    var problem = WorldBridge.CreatePlayerClanParty(clan, created);
+                    if (problem == null)
+                    {
+                        Log.Info($"{NameOf(playerId)} created party {created.PartyId} led by {created.LeaderHeroId}");
+                    }
+                    else
+                    {
+                        Log.Info($"Could not create {NameOf(playerId)}'s party {created.PartyId} led by {created.LeaderHeroId}: {problem}");
+                        Net.Send(peer, new ChatMessage { PlayerId = HostPlayerId, Text = $"The server could not create your new party: {problem}." });
                     }
                     return true;
                 }
@@ -213,7 +240,9 @@ namespace BannerlordMP.Session
             {
                 if (party == null || !party.IsActive || party == playerParty || party.StringId == null)
                     continue;
-                if (party.Position.ToVec2().DistanceSquared(center) > RosterInterestRadius * RosterInterestRadius)
+                // Their own clan's parties wherever they are, so the clan screen shows what those parties really have.
+                var ownClan = party.ActualClan != null && party.ActualClan == playerParty.ActualClan && party.LeaderHero != null;
+                if (!ownClan && party.Position.ToVec2().DistanceSquared(center) > RosterInterestRadius * RosterInterestRadius)
                     continue;
                 var hash = WorldBridge.RosterHash(party);
                 if (sent.TryGetValue(party.StringId, out var previous) && previous == hash)
