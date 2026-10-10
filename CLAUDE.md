@@ -75,7 +75,7 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
   propose world events their player causes; the host applies and relays; every apply is idempotent.
 - **Ledger** (`WorldBridge.CaptureLedger`/`ApplyLedgerDelta`, `Core/Sync/Ledger.cs`): the player's own
   party/hero as counters (`g` gold, `m:`/`w:` troops, `p:`/`q:` prisoners, `i:` items, `e:` worn gear per
-  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`). Client predicts and sends deltas; host applies
+  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`, `ren` renown). Client predicts and sends deltas; host applies
   and returns state. Gold is player-authoritative (host undoes AI changes; client runs daily clan finances).
   Food is eaten only on the host (client consumption is blocked, it was counting twice).
 - **Players' parties on the host** look like AI lord parties. Patches stop the host's AI from managing them
@@ -98,6 +98,7 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.25 clan renown was never synced, so it reset to the server's copy on rejoin → `ren` ledger key.
 - v0.3.24 attack popup looping after a siege + crash on re-attack → client-side validation and grace period.
 - v0.3.23 host menu asks which save to load (with dates). v0.3.22 menu remembered the starting save instead
   of the autosave; save before exit.

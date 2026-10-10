@@ -53,7 +53,10 @@ namespace BannerlordMP.Game
             {
                 ledger["g"] = hero.Gold;
                 if (hero.Clan != null && hero.Clan.Leader == hero)
+                {
                     ledger["inf"] = (int)Math.Floor(hero.Clan.Influence);
+                    ledger["ren"] = (int)Math.Floor(hero.Clan.Renown);
+                }
                 ledger["hp"] = hero.HitPoints;
                 var developer = hero.HeroDeveloper;
                 foreach (var skill in Skills.All)
@@ -110,6 +113,14 @@ namespace BannerlordMP.Game
                         hero.Gold = Math.Max(0, hero.Gold + change);
                     else if (key == "inf" && hero?.Clan != null)
                         hero.Clan.Influence += change;
+                    else if (key == "ren" && hero?.Clan != null)
+                    {
+                        // AddRenown also raises the clan tier; renown never lowers a tier, so a loss is set directly.
+                        if (change > 0)
+                            hero.Clan.AddRenown(change, false);
+                        else
+                            hero.Clan.Renown = Math.Max(0f, hero.Clan.Renown + change);
+                    }
                     else if (key == "hp" && hero != null)
                         hero.HitPoints = Math.Max(1, Math.Min(hero.MaxHitPoints, hero.HitPoints + change));
                     else if (key.StartsWith("x:") && hero != null && change > 0)
