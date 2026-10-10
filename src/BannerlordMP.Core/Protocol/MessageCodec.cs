@@ -8,7 +8,7 @@ namespace BannerlordMP.Core.Protocol
     public static class MessageCodec
     {
         /// <summary>Bump whenever a message layout changes; host and clients must match exactly.</summary>
-        public const ushort ProtocolVersion = 7;
+        public const ushort ProtocolVersion = 8;
 
         private static readonly Dictionary<MessageType, Func<INetMessage>> Factories = new Dictionary<MessageType, Func<INetMessage>>
         {

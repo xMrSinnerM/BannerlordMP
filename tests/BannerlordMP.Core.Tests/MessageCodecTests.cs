@@ -198,6 +198,11 @@ namespace BannerlordMP.Core.Tests
             Assert.Equal(WorldEventKind.SettlementOwner, world.Kind);
             Assert.Equal("lord_1", world.B);
 
+            var army = RoundTrip(new WorldEventMessage { HostHours = 10, Kind = WorldEventKind.ArmyCreated, A = "main_hero", B = "3|" });
+            Assert.Equal(WorldEventKind.ArmyCreated, army.Kind);
+            Assert.Equal("3|", army.B);
+            Assert.Equal(WorldEventKind.ArmyDispersed, RoundTrip(new WorldEventMessage { Kind = WorldEventKind.ArmyDispersed, A = "p" }).Kind);
+
             Assert.Equal("x", RoundTrip(new EncounterRequestMessage { AttackerPartyId = "x" }).AttackerPartyId);
 
             var delta = RoundTrip(new LedgerDeltaMessage { Seq = 4, Delta = new Dictionary<string, int> { { "g", -5 } } });

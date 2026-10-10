@@ -34,7 +34,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 7) and tell the owner to update both PCs.
+   (currently 8) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -98,6 +98,8 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.27 clan parties a player creates and their own armies stood frozen (the client's AI is off and the host never
+  heard of them) → host creates them from a client `PartySpawned`; army `WorldEvent`s 10–14; protocol 8.
 - v0.3.25 clan renown was never synced, so it reset to the server's copy on rejoin → `ren` ledger key.
 - v0.3.24 attack popup looping after a siege + crash on re-attack → client-side validation and grace period.
 - v0.3.23 host menu asks which save to load (with dates). v0.3.22 menu remembered the starting save instead
