@@ -1,0 +1,38 @@
+namespace BannerlordMP.Core.Protocol
+{
+    public enum MessageType : byte
+    {
+        Hello = 1,
+        Welcome = 2,
+        Reject = 3,
+        PlayerList = 4,
+        TimeRequest = 5,
+        ActivityChanged = 6,
+        TimeState = 7,
+        WorldSnapshot = 8,
+        PartyState = 9,
+        BattleStarted = 10,
+        BattleResult = 11,
+        PartyDestroyed = 12,
+        Chat = 13,
+        AuthChallenge = 14,
+        SlotList = 15,
+        ClaimSlot = 16,
+        CreateHero = 17,
+        JoinAccepted = 18,
+        SaveChunk = 19,
+        ServerInfo = 20,
+        PartySpawned = 21,
+        PartyRoster = 22,
+        WorldEvent = 23,
+        EncounterRequest = 24,
+        LedgerDelta = 25,
+        LedgerState = 26,
+        PartyInfoRequest = 27,
+        DecisionVoteRequest = 28,
+        DecisionVote = 29,
+        MarketRequest = 30,
+        MarketState = 31,
+        MarketChange = 32,
+    }
+}

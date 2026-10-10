@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Game-independent logic (protocol, time arbitration, catch-up). No TaleWorlds references so it can be unit tested anywhere. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>BannerlordMP.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
