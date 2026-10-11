@@ -367,6 +367,14 @@ namespace BannerlordMP.Session
             Net.SendToAll(message);
         }
 
+        /// <summary>The player put a companion in their party (hired, or moved from another of their parties): tell the host.</summary>
+        public override void OnLocalHeroJoinedParty(Hero hero, MobileParty party)
+        {
+            if (!_welcomed || WorldBridge.ApplyingRemote || IsPlayerCharacter(hero) || party.ActualClan != Clan.PlayerClan || party.StringId == null)
+                return;
+            OnLocalWorldEvent(WorldEventKind.HeroJoinedParty, hero.StringId, party.StringId);
+        }
+
         public override void SendChat(string text)
         {
             Net.SendToAll(new ChatMessage { Text = text });

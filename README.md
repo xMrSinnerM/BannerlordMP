@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.28, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.29, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -122,6 +122,7 @@ happens.
 | Battle results | Losses and destroyed parties applied to the real world |
 | Your money | Your game computes your clan's daily wages and income exactly as single player does; the server never changes your gold on its own |
 | Kingdom votes | When your kingdom must decide something, a pop-up asks for your vote (option, then how strongly to back it, with its influence cost; a ruler picks the outcome). The AI never votes for you: no answer means you abstain |
+| Companions | Hiring a companion, dismissing one, and moving one between your parties reach the server, so they are still with you after you rejoin. Companions captured with you aren't shared yet |
 | Your party | Only you manage it. On the server, the AI doesn't upgrade your troops, buy or sell for you, recruit, or make troops desert because of a lord's wage limit. Desertion from low morale or an oversized party still happens, as in single player |
 | Clan parties you create | A party you make for a clan member (clan screen) is created on the server too; the server's AI leads it, as single player's AI leads your clan parties, and everyone sees it move. Its troops are kept accurate on your machine wherever it is |
 | Your armies | An army you make is made on the server too. The parties you call travel to you there, and once they reach you they join your army on your machine and move with you. Cohesion is worked out by your game, as in single player; leaving, dismissing a party or disbanding is shared. If you leave the game, your army breaks up |
@@ -140,7 +141,6 @@ happens.
   - quests
   - relations
   - marriages
-  - companions joining or leaving
   - caravans you create yourself (clan parties are shared)
   - joining another lord's or another player's army
   - joint battles (players can't fight in the same battle or attack each other)

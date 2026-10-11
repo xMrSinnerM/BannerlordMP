@@ -32,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 9) and tell the owner to update both PCs.
+   (currently 10) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -96,6 +96,8 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.29 companions hired on a client vanished on rejoin (the server never heard of them) → `WorldEvent`s
+  CompanionJoined/CompanionLeft/HeroJoinedParty (15–17), checked by `HostSession.MayChangeCompanion`. Protocol 10.
 - v0.3.28 a player's own hero can be captured: their game runs single-player captivity (menus, escape, ransom
   offers), the host makes the hero the same captor's prisoner and keeps their party leaderless and inactive
   (`WorldBridge.CapturePlayerHero`, `CaptivityPatches` stop it disbanding), `HostSession.TickCaptivity` tells the
@@ -120,7 +122,7 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 See README "Known limitations". Agreed plan after the owner's testing:
 1. ~~The player's own hero being captured~~ (v0.3.28, untested in-game). Companions captured with the player
    still aren't synced.
-2. Relations, companions (hire/dismiss), marriages applied on the host.
+2. Relations and marriages applied on the host (companion hire/dismiss done in v0.3.29).
 3. Prisoners moved to dungeons / sold to ransom brokers.
 Later: raids and siege details, clan parties and caravans, quests, joint battles (largest), no world pause
 when a playing host fights, headless server research, correct icons for mirrored parties, live kingdom

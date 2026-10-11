@@ -798,6 +798,39 @@ namespace BannerlordMP.Game
                                 KillCharacterAction.ApplyByBattle(victim, GameBridge.FindHero(message.B), false);
                             break;
                         }
+                        case WorldEventKind.CompanionJoined:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            var clan = Find<Clan>(message.B);
+                            if (hero == null || clan == null || !hero.IsAlive || hero.Clan == clan)
+                                break;
+                            AddCompanionAction.Apply(clan, hero);
+                            Log.Info($"{hero.StringId} is now a companion of {clan.StringId}");
+                            break;
+                        }
+                        case WorldEventKind.CompanionLeft:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            if (hero == null || hero.Clan == null || hero.CompanionOf == null)
+                                break;
+                            if (hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero)
+                                break; // Leading a party: the clan screen disbands it first, which arrives on its own.
+                            RemoveCompanionAction.ApplyByFire(hero.Clan, hero);
+                            break;
+                        }
+                        case WorldEventKind.HeroJoinedParty:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            var party = GameBridge.FindParty(message.B);
+                            if (hero == null || party == null || !hero.IsAlive || hero.IsPrisoner || hero.PartyBelongedTo == party)
+                                break;
+                            // Our own hero, and anyone leading a party, move by their own actions.
+                            if (hero == Hero.MainHero || (hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero))
+                                break;
+                            AddHeroToPartyAction.Apply(hero, party, false);
+                            Log.Info($"{hero.StringId} joined party {party.StringId}");
+                            break;
+                        }
                         case WorldEventKind.ArmyCreated:
                         case WorldEventKind.ArmyPartyJoined:
                         case WorldEventKind.ArmyPartyAttached:

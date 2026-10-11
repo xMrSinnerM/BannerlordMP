@@ -109,6 +109,12 @@ namespace BannerlordMP.Core.Protocol
         ArmyPartyLeft = 13,
         /// <summary>A = leader party of the army that broke up.</summary>
         ArmyDispersed = 14,
+        /// <summary>A = hero hired as a companion, B = the clan that hired them.</summary>
+        CompanionJoined = 15,
+        /// <summary>A = companion who left their clan (dismissed).</summary>
+        CompanionLeft = 16,
+        /// <summary>A = a clan's hero (a companion) who joined a party of that clan, B = the party.</summary>
+        HeroJoinedParty = 17,
     }
 
     /// <summary>

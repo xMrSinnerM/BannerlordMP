@@ -50,6 +50,16 @@ namespace BannerlordMP.Session
             SendToPlayers(message);
         }
 
+        public override bool IsPlayerCharacter(Hero hero) => base.IsPlayerCharacter(hero) || IsPlayerHero(hero);
+
+        public override void OnLocalHeroJoinedParty(Hero hero, MobileParty party)
+        {
+            // Only players' companions are news; lords forming parties are just parties the snapshots show.
+            if (IsPlayerCharacter(hero) || party.StringId == null || !(IsPlayerClan(party.ActualClan) || party.ActualClan == Clan.PlayerClan))
+                return;
+            OnLocalWorldEvent(WorldEventKind.HeroJoinedParty, hero.StringId, party.StringId);
+        }
+
         public override void OnLocalPartyCreated(MobileParty party)
         {
             // Parties are filled in (troops, position) after the creation event; describe them next frame.
@@ -186,12 +196,36 @@ namespace BannerlordMP.Session
         /// </summary>
         private bool MayChangeHero(int playerId, WorldEventMessage proposal)
         {
+            if (proposal.Kind == WorldEventKind.CompanionJoined || proposal.Kind == WorldEventKind.CompanionLeft || proposal.Kind == WorldEventKind.HeroJoinedParty)
+                return MayChangeCompanion(playerId, proposal);
             if (proposal.Kind != WorldEventKind.HeroCaptured && proposal.Kind != WorldEventKind.HeroReleased)
                 return true;
             var hero = GameBridge.FindHero(proposal.A);
             if (hero == null || !IsPlayedHero(hero) || hero.StringId == Players[playerId].HeroId)
                 return true;
             Log.Info($"Ignoring {NameOf(playerId)}'s {proposal}: that hero is played by someone else");
+            return false;
+        }
+
+        /// <summary>A player hires, dismisses and places only their own clan's companions.</summary>
+        private bool MayChangeCompanion(int playerId, WorldEventMessage proposal)
+        {
+            var clan = GameBridge.FindHero(Players[playerId].HeroId)?.Clan;
+            var hero = GameBridge.FindHero(proposal.A);
+            string problem = null;
+            if (clan == null || hero == null)
+                problem = "unknown hero or clan";
+            else if (IsPlayerCharacter(hero))
+                problem = "that hero is a player";
+            else if (proposal.Kind == WorldEventKind.CompanionJoined && proposal.B != clan.StringId)
+                problem = "not their clan";
+            else if (proposal.Kind == WorldEventKind.CompanionLeft && hero.Clan != clan)
+                problem = "not their companion";
+            else if (proposal.Kind == WorldEventKind.HeroJoinedParty && ((hero.Clan != null && hero.Clan != clan) || GameBridge.FindParty(proposal.B)?.ActualClan != clan))
+                problem = "not their clan's hero or party";
+            if (problem == null)
+                return true;
+            Log.Info($"Ignoring {NameOf(playerId)}'s {proposal}: {problem}");
             return false;
         }
 

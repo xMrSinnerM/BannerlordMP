@@ -92,6 +92,15 @@ namespace BannerlordMP.Session
         public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null
             && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo) || Players.Values.Any(p => p.HeroId == hero.StringId));
 
+        /// <summary>A hero a person plays (not their companions): this machine's, another player's, or a slot's on the host.</summary>
+        public virtual bool IsPlayerCharacter(TaleWorlds.CampaignSystem.Hero hero) => hero != null
+            && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || Players.Values.Any(p => p.HeroId == hero.StringId));
+
+        /// <summary>A hero (a companion) joined a party in the local campaign.</summary>
+        public virtual void OnLocalHeroJoinedParty(TaleWorlds.CampaignSystem.Hero hero, MobileParty party)
+        {
+        }
+
         public bool IsPlayerParty(MobileParty party)
         {
             if (party == null)

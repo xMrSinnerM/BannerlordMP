@@ -40,6 +40,15 @@ namespace BannerlordMP.Game
                 if (party != null && party == MobileParty.MainParty)
                     Forward(s => s.OnLocalSettlementLeft(settlement));
             });
+            CampaignEvents.NewCompanionAdded.AddNonSerializedListener(this, hero =>
+                World(WorldEventKind.CompanionJoined, hero?.StringId, hero?.Clan?.StringId));
+            CampaignEvents.CompanionRemoved.AddNonSerializedListener(this, (hero, detail) =>
+                World(WorldEventKind.CompanionLeft, hero?.StringId, string.Empty));
+            CampaignEvents.OnHeroJoinedPartyEvent.AddNonSerializedListener(this, (hero, party) =>
+            {
+                if (hero != null && party != null)
+                    Forward(s => s.OnLocalHeroJoinedParty(hero, party));
+            });
             CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
                 World(WorldEventKind.HeroKilled, victim?.StringId, killer?.StringId ?? string.Empty));
             CampaignEvents.ArmyCreated.AddNonSerializedListener(this, army =>
