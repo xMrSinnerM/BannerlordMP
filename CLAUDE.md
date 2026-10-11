@@ -32,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 10) and tell the owner to update both PCs.
+   (currently 11) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -73,7 +73,7 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
   propose world events their player causes; the host applies and relays; every apply is idempotent.
 - **Ledger** (`WorldBridge.CaptureLedger`/`ApplyLedgerDelta`, `Core/Sync/Ledger.cs`): the player's own
   party/hero as counters (`g` gold, `m:`/`w:` troops, `p:`/`q:` prisoners, `i:` items, `e:` worn gear per
-  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`, `ren` renown, `lvl`/`tx` level and hero xp, `uf`/`ua` unspent points). Client predicts and sends deltas; host applies
+  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`, `ren` renown, `lvl`/`tx` level and hero xp, `uf`/`ua` unspent points, `k:` chosen perks). Client predicts and sends deltas; host applies
   and returns state. Gold is player-authoritative (host undoes AI changes; client runs daily clan finances).
   Food is eaten only on the host (client consumption is blocked, it was counting twice).
 - **Players' parties on the host** look like AI lord parties. Patches stop the host's AI from managing them
@@ -96,6 +96,21 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.33 the host's siege AI assaulted for a besieging player (their puppet had a besiege order): it fought the battle
+  itself (hundreds of the player's troops lost), took the town/castle, and the owner change ended the player's own
+  siege halfway on the client (NRE in `KingdomManager.SiegeCompleted`) → attack menu stuck, Leave dead, crash on Attack.
+  `PlayerPartyPatches.NoSettlementEncounters` keeps players' parties out of settlement encounters on the host; the
+  client ignores owner changes for a settlement it is besieging. Log showed money was garrison wages (-3038/day).
+- v0.3.31 a clan party made in a town stayed inside that town on the client (snapshots never move parties in a
+  settlement) → `WorldBridge.LeaveSettlementIfMovedAway` takes stand-ins out once the server has them elsewhere;
+  the host enables the new clan party's AI explicitly and logs its state.
+- v0.3.30 a companion's clan party stood still and couldn't join armies: the server refused to create it because
+  the companion was hired before v0.3.29 (not in the clan there) → `CreatePlayerClanParty` hires a clanless leader
+  first, and the client resends its own clan parties missing from full snapshots (`ResendOwnClanParty`, every 30 s).
+- v0.3.32 chosen perks were never synced, so they were gone after a rejoin → `k:` ledger keys (protocol 11). The attack
+  menu looping after a siege: puppets with an old chase order could still start encounters natively → the client only
+  accepts AI attacks it started from an `EncounterRequest`. Daily upkeep log lines on both sides (food, gold, finance
+  breakdown) for the "money and food drop fast" report, whose cause isn't found yet.
 - v0.3.29 companions hired on a client vanished on rejoin (the server never heard of them) → `WorldEvent`s
   CompanionJoined/CompanionLeft/HeroJoinedParty (15–17), checked by `HostSession.MayChangeCompanion`. Protocol 10.
 - v0.3.28 a player's own hero can be captured: their game runs single-player captivity (menus, escape, ransom

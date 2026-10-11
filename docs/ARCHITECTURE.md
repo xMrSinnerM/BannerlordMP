@@ -85,7 +85,7 @@ A player's party is changed from both ends: the host's simulation pays wages, co
 the player buys, recruits, loots and levels up on their own machine. `WorldBridge.CaptureLedger` flattens
 the party and hero into named counters (`g` gold, `m:`/`w:` troops and wounded, `p:`/`q:` prisoners,
 `i:` items with modifiers, `e:` worn equipment (one counter per filled slot), `hp`, `x:` skill xp, `f:` focus,
-`a:` attributes). `ClientLedger` (in Core)
+`a:` attributes, `k:` chosen perks). `ClientLedger` (in Core)
 sends local changes as numbered deltas; the host applies them, checking attribute and focus spending
 against the hero's unspent points, and sends back its full state with the last sequence number it
 applied. The client re-applies anything not yet acknowledged, so the player never sees their own action

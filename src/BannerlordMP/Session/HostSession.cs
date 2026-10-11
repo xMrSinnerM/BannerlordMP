@@ -165,6 +165,7 @@ namespace BannerlordMP.Session
                 GameBridge.KeepMainPartyParked();
             ExpireStaleBattles();
             TickWorld(dt);
+            LogPlayerUpkeep();
 
             _timeStateTimer += dt;
             if (_timeStateTimer >= TimeStateInterval)

@@ -4,6 +4,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.CharacterDevelopment;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Extensions;
 using TaleWorlds.CampaignSystem.Party;
@@ -74,6 +75,13 @@ namespace BannerlordMP.Game
                 }
                 foreach (var attribute in Attributes.All)
                     ledger["a:" + attribute.StringId] = hero.GetAttributeValue(attribute);
+                // Perks the player picked ("k:" + perk = 1). They were never sent, so the server's copy of the hero
+                // had none of them and every rejoin brought the hero back without their chosen perks.
+                foreach (var perk in PerkObject.All)
+                {
+                    if (hero.GetPerkValue(perk))
+                        ledger["k:" + perk.StringId] = 1;
+                }
                 CaptureEquipment(hero.BattleEquipment, 'b', ledger);
                 CaptureEquipment(hero.CivilianEquipment, 'c', ledger);
             }
@@ -110,6 +118,7 @@ namespace BannerlordMP.Game
             // did both and sent the result, so those side effects are undone after the loop.
             var development = hero == null ? null : new DevelopmentCounters(hero);
             var equipmentChanges = new List<KeyValuePair<string, int>>();
+            var perkChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
             {
@@ -159,6 +168,8 @@ namespace BannerlordMP.Game
                         ApplyItem(party.ItemRoster, key.Substring(2), change);
                     else if (key.StartsWith("e:") && hero != null)
                         equipmentChanges.Add(pair);
+                    else if (key.StartsWith("k:") && hero != null)
+                        perkChanges.Add(pair);
                 }
                 catch (Exception e)
                 {
@@ -173,6 +184,19 @@ namespace BannerlordMP.Game
             catch (Exception e)
             {
                 Log.Error("Level and unspent points could not be applied", e);
+            }
+
+            // Perks after skills and level, so a perk arrives with the skill it needs.
+            foreach (var pair in perkChanges)
+            {
+                try
+                {
+                    ApplyPerkChange(hero, pair.Key.Substring(2), pair.Value);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Perk change {pair.Key}{pair.Value:+#;-#;0} failed", e);
+                }
             }
 
             // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
@@ -253,6 +277,20 @@ namespace BannerlordMP.Game
                 return;
             var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
             items.AddToCounts(new EquipmentElement(item, modifier, null, false), change);
+        }
+
+        private static readonly System.Reflection.MethodInfo SetPerkValueInternal = HarmonyLib.AccessTools.Method(typeof(Hero), "SetPerkValueInternal");
+
+        private static void ApplyPerkChange(Hero hero, string id, int change)
+        {
+            var perk = PerkObject.All.FirstOrDefault(p => p.StringId == id);
+            if (perk == null || change == 0)
+                return;
+            var has = hero.GetPerkValue(perk);
+            if (change > 0 && !has)
+                hero.HeroDeveloper.AddPerk(perk);
+            else if (change < 0 && has && SetPerkValueInternal != null)
+                SetPerkValueInternal.Invoke(hero, new object[] { perk, false });
         }
 
         /// <summary>
@@ -465,6 +503,33 @@ namespace BannerlordMP.Game
         }
 
         /// <summary>
+        /// Client: a stand-in that sits inside a settlement here (it was there when the world was saved, or the player
+        /// created it in a town) is never moved by snapshots, because the game positions parties in settlements itself.
+        /// Once the server has it somewhere else, take it out so it follows the server. A new clan party made in a town
+        /// stood still in that town for good, and couldn't reach its army.
+        /// </summary>
+        public static void LeaveSettlementIfMovedAway(MobileParty party, float x, float y)
+        {
+            var settlement = party?.CurrentSettlement;
+            if (settlement == null || party == MobileParty.MainParty || party.IsGarrison || party.IsMilitia || party.MapEvent != null || party.AttachedTo != null)
+                return;
+            if (settlement.Position.ToVec2().DistanceSquared(new Vec2(x, y)) < LeftSettlementDistance * LeftSettlementDistance)
+                return;
+            try
+            {
+                Remote(() => LeaveSettlementAction.ApplyForParty(party));
+                MakePuppet(party);
+                Log.Info($"Client: {party.StringId} left {settlement.StringId} on the server; taking it out here too");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Could not take {party.StringId} out of {settlement.StringId}", e);
+            }
+        }
+
+        private const float LeftSettlementDistance = 1.5f;
+
+        /// <summary>
         /// Host: a player created a party for one of their clan's heroes on their machine (clan screen). The real party
         /// is made here as a lord party of that hero, with the id, position and troops their game gave it, so their
         /// copy becomes its mirror. From then on the host's AI leads it, as single player's AI leads clan parties.
@@ -473,6 +538,12 @@ namespace BannerlordMP.Game
         public static string CreatePlayerClanParty(Clan clan, PartySpawnedMessage message)
         {
             var leader = GameBridge.FindHero(message.LeaderHeroId);
+            // A companion hired before the server heard of hires (v0.3.29) is still clanless here: hire them now.
+            if (clan != null && leader != null && leader.IsAlive && leader.Clan == null && Session.MpSession.Current?.IsPlayerCharacter(leader) != true)
+            {
+                Remote(() => AddCompanionAction.Apply(clan, leader));
+                Log.Info($"{leader.StringId} was not yet {clan.StringId}'s companion here; added them");
+            }
             if (clan == null || leader == null || leader.Clan != clan || leader == clan.Leader)
                 return "its leader is not a hero of your clan here";
             if (!leader.IsAlive || leader.IsPrisoner)
@@ -490,11 +561,19 @@ namespace BannerlordMP.Game
                 {
                     // Here the hero is usually still a member of the player's party (heroes are not in the ledger).
                     leader.PartyBelongedTo?.MemberRoster.AddToCounts(leader.CharacterObject, -1, false, 0, 0, true, -1);
+                    if (leader.PartyBelongedTo == null && leader.CurrentSettlement != null)
+                        LeaveSettlementAction.ApplyForCharacterOnly(leader);
                     var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
                     var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
                     var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                     GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
+                    // Led by the host's AI from here, as single player's AI leads clan parties.
+                    party.IgnoreByOtherPartiesTill(CampaignTime.Now);
+                    party.Ai.EnableAi();
+                    party.Ai.SetDoNotMakeNewDecisions(false);
+                    Log.Info($"Created clan party {party.StringId} at ({position.X:0.0}, {position.Y:0.0}): in settlement {party.CurrentSettlement?.StringId ?? "none"}, " +
+                             $"AI disabled {party.Ai.IsDisabled}, behavior {party.DefaultBehavior}, {party.MemberRoster.TotalManCount} men");
                 }
                 catch (Exception e)
                 {
@@ -548,6 +627,10 @@ namespace BannerlordMP.Game
                 return "that party is busy (battle, town or siege)";
             if (attacker.MemberRoster == null || attacker.MemberRoster.TotalHealthyCount <= 0)
                 return "that party has no troops here";
+            if (attacker.IsGarrison || attacker.IsMilitia)
+                return "a garrison or militia doesn't chase on the map";
+            if (attacker.LeaderHero != null && attacker.LeaderHero.IsPrisoner)
+                return "its leader is a prisoner here";
             if (attacker.MapFaction == null || main.MapFaction == null || !FactionManager.IsAtWarAgainstFaction(attacker.MapFaction, main.MapFaction))
                 return "not at war here";
             if (attacker.Position.ToVec2().DistanceSquared(main.Position.ToVec2()) > 3f * 3f)
@@ -683,6 +766,14 @@ namespace BannerlordMP.Game
                         {
                             var settlement = Find<Settlement>(message.A);
                             var owner = GameBridge.FindHero(message.B);
+                            // Our own siege of it is still going on here: changing the owner under it ends the siege halfway
+                            // (the game threw inside its siege-completed handling), which left the attack menu stuck open
+                            // and crashed the game on Attack. The outcome of our siege is ours to report.
+                            if (settlement?.SiegeEvent?.BesiegerCamp?.LeaderParty == MobileParty.MainParty && Session.MpSession.Current is Session.ClientSession)
+                            {
+                                Log.Info($"Ignoring owner change of {message.A} during our own siege of it");
+                                break;
+                            }
                             if (settlement != null && owner != null && settlement.Owner != owner)
                                 ChangeOwnerOfSettlementAction.ApplyByDefault(owner, settlement);
                             break;
