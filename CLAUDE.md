@@ -96,6 +96,9 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.30 a companion's clan party stood still and couldn't join armies: the server refused to create it because
+  the companion was hired before v0.3.29 (not in the clan there) → `CreatePlayerClanParty` hires a clanless leader
+  first, and the client resends its own clan parties missing from full snapshots (`ResendOwnClanParty`, every 30 s).
 - v0.3.29 companions hired on a client vanished on rejoin (the server never heard of them) → `WorldEvent`s
   CompanionJoined/CompanionLeft/HeroJoinedParty (15–17), checked by `HostSession.MayChangeCompanion`. Protocol 10.
 - v0.3.28 a player's own hero can be captured: their game runs single-player captivity (menus, escape, ransom

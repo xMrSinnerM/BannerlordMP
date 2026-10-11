@@ -713,7 +713,12 @@ namespace BannerlordMP.Session
             {
                 if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || onHost.Contains(party.StringId))
                     continue;
-                if (party.IsGarrison || party.IsMilitia || party.ActualClan == Clan.PlayerClan || IsPlayerParty(party))
+                if (party.ActualClan == Clan.PlayerClan)
+                {
+                    ResendOwnClanParty(party);
+                    continue;
+                }
+                if (party.IsGarrison || party.IsMilitia || IsPlayerParty(party))
                     continue;
 
                 stillMissing.Add(party.StringId);
@@ -732,6 +737,24 @@ namespace BannerlordMP.Session
             }
             foreach (var id in _missingFromHost.Keys.Where(id => !stillMissing.Contains(id)).ToList())
                 _missingFromHost.Remove(id);
+        }
+
+        private const double ResendOwnPartySeconds = 30;
+        private readonly Dictionary<string, double> _ownPartyResent = new Dictionary<string, double>();
+
+        /// <summary>
+        /// One of our clan's parties that the server doesn't have (it refused it, e.g. its leader wasn't our companion
+        /// there yet, or the message was lost). Without the server's copy it never moves; ask again now and then.
+        /// </summary>
+        private void ResendOwnClanParty(MobileParty party)
+        {
+            if (party == MobileParty.MainParty || !party.IsLordParty || party.LeaderHero == null || IsPlayerCharacter(party.LeaderHero))
+                return;
+            if (_ownPartyResent.TryGetValue(party.StringId, out var at) && RealSeconds - at < ResendOwnPartySeconds)
+                return;
+            _ownPartyResent[party.StringId] = RealSeconds;
+            Log.Info($"Client: the server has no clan party {party.StringId} (led by {party.LeaderHero.StringId}); sending it again");
+            Net.SendToAll(WorldBridge.DescribeParty(party, GameBridge.NowHours));
         }
 
         /// <summary>Asks the player about the next pending kingdom decision, when they are free on the map.</summary>

@@ -473,6 +473,12 @@ namespace BannerlordMP.Game
         public static string CreatePlayerClanParty(Clan clan, PartySpawnedMessage message)
         {
             var leader = GameBridge.FindHero(message.LeaderHeroId);
+            // A companion hired before the server heard of hires (v0.3.29) is still clanless here: hire them now.
+            if (clan != null && leader != null && leader.IsAlive && leader.Clan == null && Session.MpSession.Current?.IsPlayerCharacter(leader) != true)
+            {
+                Remote(() => AddCompanionAction.Apply(clan, leader));
+                Log.Info($"{leader.StringId} was not yet {clan.StringId}'s companion here; added them");
+            }
             if (clan == null || leader == null || leader.Clan != clan || leader == clan.Leader)
                 return "its leader is not a hero of your clan here";
             if (!leader.IsAlive || leader.IsPrisoner)
@@ -490,6 +496,8 @@ namespace BannerlordMP.Game
                 {
                     // Here the hero is usually still a member of the player's party (heroes are not in the ledger).
                     leader.PartyBelongedTo?.MemberRoster.AddToCounts(leader.CharacterObject, -1, false, 0, 0, true, -1);
+                    if (leader.PartyBelongedTo == null && leader.CurrentSettlement != null)
+                        LeaveSettlementAction.ApplyForCharacterOnly(leader);
                     var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
                     var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
                     var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
