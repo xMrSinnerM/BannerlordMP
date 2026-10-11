@@ -5,6 +5,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.CampaignBehaviors;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Settlements.Workshops;
@@ -447,6 +448,7 @@ namespace BannerlordMP.Game
                     campaign.QuestManager.HourlyTick();
                     campaign.IssueManager?.HourlyTick();
                 });
+                Safely("travel", TickOwnTravellers);
             }
             if (hour / 24 != QuestTick[1])
             {
@@ -459,6 +461,64 @@ namespace BannerlordMP.Game
                 Safely("weekly", () => campaign.QuestManager.WeeklyTick());
             }
         }
+
+        /// <summary>
+        /// Client: a companion sent somewhere from afar (made governor of a town they aren't in, or leader of a new
+        /// clan party) travels there for a while and arrives on an hourly turn of the game's teleportation behaviour,
+        /// which is off here with the rest of the hourly turns. Only the player's own clan's travellers are given
+        /// that turn; everyone else's travel happens on the server. Arriving makes them governor or party leader in
+        /// this game, and the usual watchers tell the server.
+        /// </summary>
+        private static void TickOwnTravellers()
+        {
+            var behavior = Campaign.Current?.GetCampaignBehavior<TeleportationCampaignBehavior>();
+            if (behavior == null || Clan.PlayerClan == null)
+                return;
+            if (TravelList == null || TravelHourlyTick == null)
+            {
+                Log.Error("Teleportation behaviour members not found; companions sent from afar will not arrive");
+                QuestTickFailed.Add("travel");
+                throw new InvalidOperationException("teleportation members missing");
+            }
+            if (!(TravelList.GetValue(behavior) is System.Collections.IList list) || list.Count == 0)
+                return;
+            var others = new List<object>();
+            foreach (var entry in list.Cast<object>().ToList())
+            {
+                var hero = TravelHero?.GetValue(entry) as Hero;
+                if (hero?.Clan != Clan.PlayerClan)
+                {
+                    others.Add(entry);
+                    list.Remove(entry);
+                }
+            }
+            if (list.Count > 0)
+            {
+                try
+                {
+                    TravelHourlyTick.Invoke(behavior, null);
+                }
+                finally
+                {
+                    foreach (var entry in others)
+                        list.Add(entry);
+                }
+            }
+            else
+            {
+                foreach (var entry in others)
+                    list.Add(entry);
+            }
+        }
+
+        private static readonly System.Reflection.FieldInfo TravelList =
+            HarmonyLib.AccessTools.Field(typeof(TeleportationCampaignBehavior), "_teleportationList");
+
+        private static readonly System.Reflection.MethodInfo TravelHourlyTick =
+            HarmonyLib.AccessTools.Method(typeof(TeleportationCampaignBehavior), "HourlyTick");
+
+        private static readonly System.Reflection.FieldInfo TravelHero =
+            HarmonyLib.AccessTools.Field(HarmonyLib.AccessTools.Inner(typeof(TeleportationCampaignBehavior), "TeleportationData"), "TeleportingHero");
 
         private static readonly HashSet<string> QuestTickFailed = new HashSet<string>();
 

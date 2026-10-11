@@ -96,6 +96,9 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.38 a companion made governor of a town they weren't in never arrived: single player sends them travelling and
+  finishes the trip on an hourly turn of `TeleportationCampaignBehavior`, which is off on clients →
+  `StateSync.TickOwnTravellers` gives the player's own clan's travellers that turn (also party leaders sent from afar).
 - v0.3.37 the remaining gaps: AI/other players' armies mirrored on clients and joinable (host sends an AI army's
   field battles to an attached online player, detaches them for settlement encounters, never lets the AI call
   players); tournaments (29/30); quests (31: host removes the taken issue; `StateSync.TickQuests` runs quest turns
