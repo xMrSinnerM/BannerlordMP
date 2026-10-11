@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Core.Time;
 using BannerlordMP.Game;
@@ -88,7 +89,17 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>A hero somebody plays (this machine's, or another player's): only their own game may capture or free them.</summary>
-        public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo));
+        public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null
+            && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo) || Players.Values.Any(p => p.HeroId == hero.StringId));
+
+        /// <summary>A hero a person plays (not their companions): this machine's, another player's, or a slot's on the host.</summary>
+        public virtual bool IsPlayerCharacter(TaleWorlds.CampaignSystem.Hero hero) => hero != null
+            && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || Players.Values.Any(p => p.HeroId == hero.StringId));
+
+        /// <summary>A hero (a companion) joined a party in the local campaign.</summary>
+        public virtual void OnLocalHeroJoinedParty(TaleWorlds.CampaignSystem.Hero hero, MobileParty party)
+        {
+        }
 
         public bool IsPlayerParty(MobileParty party)
         {
@@ -125,6 +136,34 @@ namespace BannerlordMP.Session
 
         public virtual void OnLocalPartyCreated(MobileParty party)
         {
+        }
+
+        /// <summary>An army changed in the local campaign: created, a party called, attached or gone, or broken up.</summary>
+        public virtual void OnLocalArmyEvent(Core.Protocol.WorldEventKind kind, MobileParty leader, MobileParty party)
+        {
+        }
+
+        /// <summary>Describes an army change for the network (see <see cref="Core.Protocol.WorldEventKind"/>).</summary>
+        protected static Core.Protocol.WorldEventMessage DescribeArmyEvent(Core.Protocol.WorldEventKind kind, MobileParty leader, MobileParty party)
+        {
+            var message = new Core.Protocol.WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind };
+            switch (kind)
+            {
+                case Core.Protocol.WorldEventKind.ArmyCreated:
+                    var army = leader.Army;
+                    message.A = leader.LeaderHero?.StringId ?? string.Empty;
+                    message.B = $"{(int)(army?.ArmyType ?? TaleWorlds.CampaignSystem.Army.ArmyTypes.Patrolling)}|{(army?.AiBehaviorObject as TaleWorlds.CampaignSystem.Settlements.Settlement)?.StringId}";
+                    break;
+                case Core.Protocol.WorldEventKind.ArmyDispersed:
+                    message.A = leader.StringId;
+                    message.B = string.Empty;
+                    break;
+                default:
+                    message.A = party.StringId;
+                    message.B = leader.StringId;
+                    break;
+            }
+            return message;
         }
 
         public abstract void SendChat(string text);

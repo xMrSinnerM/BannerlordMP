@@ -724,17 +724,27 @@ namespace BannerlordMP.Session
                 reason = $"{slot.HeroName} is already being played.";
             else if (hero == null || !hero.IsAlive)
                 reason = $"{slot.HeroName} no longer exists or has died.";
-            else if (hero.PartyBelongedTo == null || hero.PartyBelongedTo.LeaderHero != hero)
-                reason = $"{hero.Name} is not leading a party (captured or defeated?). This is not handled yet.";
+            MobileParty party = null;
+            if (reason == null)
+            {
+                // Free again but not yet back with their party (released while nobody looked): put them back first.
+                WorldBridge.Remote(() => WorldBridge.RestoreKeptParty(hero, null));
+                // A prisoner joins too: their party waits for them (see WorldBridge.CapturePlayerHero).
+                party = hero.IsPrisoner ? WorldBridge.FindKeptParty(hero)
+                    : hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero ? hero.PartyBelongedTo : null;
+                if (party == null)
+                    reason = hero.IsPrisoner
+                        ? $"{hero.Name} is a prisoner and their party is gone. This can't be handled yet."
+                        : $"{hero.Name} is not leading a party (defeated?). This is not handled yet.";
+            }
             if (reason != null)
             {
                 Reject(peer, reason);
                 return;
             }
-            Log.Info($"Host: {hello.PlayerName} entering the world as {hero.StringId} (party {hero.PartyBelongedTo?.StringId})");
+            Log.Info($"Host: {hello.PlayerName} entering the world as {hero.StringId} (party {party.StringId}{(hero.IsPrisoner ? ", a prisoner of " + hero.PartyBelongedToAsPrisoner?.Id : "")})");
 
             var playerId = _nextPlayerId++;
-            var party = hero.PartyBelongedTo;
             state.PlayerId = playerId;
             state.SlotId = slot.SlotId;
             Players[playerId] = new PlayerInfo
@@ -747,8 +757,32 @@ namespace BannerlordMP.Session
             };
             _arbiter.AddPlayer(playerId);
             SyncRequestedSpeeds();
-            // Moved by its owner over the network, but AI on the host may still hunt it: its AI stays on (the
-            // game's AI does not chase parties whose AI is off) but it makes no decisions and holds still here.
+            if (party.IsActive)
+                PrepareOnlinePlayerParty(party);
+            else
+                _heldBy[hero.StringId] = hero.PartyBelongedToAsPrisoner?.Id; // Set up when the hero is free (TickCaptivity).
+
+            Net.Send(peer, new WelcomeMessage
+            {
+                PlayerId = playerId,
+                HostPlayerId = HostPlayerId,
+                ArbitrationMode = Config.TimeArbitration,
+                DetachDuringConversations = Config.DetachDuringConversations,
+            });
+            _snapshotCount = 0; // Next snapshot is a full one so the newcomer gets everything.
+            OnPlayerEnteredWorld(peer, playerId, party);
+            BroadcastPlayerList();
+            BroadcastTimeState();
+            UpdateLobby();
+            Log.Notify($"{Players[playerId].Name} joined as {hero.Name}.");
+        }
+
+        /// <summary>
+        /// Moved by its owner over the network, but AI on the host may still hunt it: its AI stays on (the game's AI
+        /// does not chase parties whose AI is off) but it makes no decisions and holds still here.
+        /// </summary>
+        private static void PrepareOnlinePlayerParty(MobileParty party)
+        {
             GameBridge.Freeze(party, ignoredByOthers: false);
             try
             {
@@ -769,20 +803,6 @@ namespace BannerlordMP.Session
             {
                 Log.Error("Could not lift the wage limit of " + party.StringId, e);
             }
-
-            Net.Send(peer, new WelcomeMessage
-            {
-                PlayerId = playerId,
-                HostPlayerId = HostPlayerId,
-                ArbitrationMode = Config.TimeArbitration,
-                DetachDuringConversations = Config.DetachDuringConversations,
-            });
-            _snapshotCount = 0; // Next snapshot is a full one so the newcomer gets everything.
-            OnPlayerEnteredWorld(peer, playerId, party);
-            BroadcastPlayerList();
-            BroadcastTimeState();
-            UpdateLobby();
-            Log.Notify($"{Players[playerId].Name} joined as {hero.Name}.");
         }
 
         private void HandleActivity(int playerId, PlayerActivity activity)
@@ -888,8 +908,12 @@ namespace BannerlordMP.Session
             var player = Players[playerId];
             Players.Remove(playerId);
             OnPlayerLeftWorld(playerId);
-            // The hero stays where it is, frozen and untouchable, until its owner comes back.
-            GameBridge.Freeze(GameBridge.FindParty(player.PartyId));
+            // The hero stays where it is, frozen and untouchable, until its owner comes back. Their army breaks up
+            // first: the lords in it would otherwise wait, frozen with it, until they return.
+            var leftParty = GameBridge.FindParty(player.PartyId);
+            if (leftParty?.Army != null && leftParty.Army.LeaderParty == leftParty)
+                WorldBridge.Remote(() => TaleWorlds.CampaignSystem.Actions.DisbandArmyAction.ApplyByUnknownReason(leftParty.Army));
+            GameBridge.Freeze(leftParty);
             if (_arbiter.RemovePlayer(playerId))
                 BroadcastTimeState();
             BroadcastPlayerList();

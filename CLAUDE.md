@@ -8,9 +8,7 @@ before changing behaviour.
 
 ## Working rules
 
-- Develop on branch `claude/mb2-multiplayer-campaign-mod-fxq40d`, push with
-  `git push -u origin claude/mb2-multiplayer-campaign-mod-fxq40d`. PR #1 into `main` already exists; don't
-  open new PRs unless asked.
+- PRs #1 and #2 are merged into `main`. Start new work on a fresh branch from `main` and open a PR for it.
 - Commit message trailer (exactly):
   ```
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -34,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 7) and tell the owner to update both PCs.
+   (currently 10) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -75,7 +73,7 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
   propose world events their player causes; the host applies and relays; every apply is idempotent.
 - **Ledger** (`WorldBridge.CaptureLedger`/`ApplyLedgerDelta`, `Core/Sync/Ledger.cs`): the player's own
   party/hero as counters (`g` gold, `m:`/`w:` troops, `p:`/`q:` prisoners, `i:` items, `e:` worn gear per
-  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`, `ren` renown). Client predicts and sends deltas; host applies
+  slot, `hp`, `x:` xp, `f:` focus, `a:` attributes, `inf`, `ren` renown, `lvl`/`tx` level and hero xp, `uf`/`ua` unspent points). Client predicts and sends deltas; host applies
   and returns state. Gold is player-authoritative (host undoes AI changes; client runs daily clan finances).
   Food is eaten only on the host (client consumption is blocked, it was counting twice).
 - **Players' parties on the host** look like AI lord parties. Patches stop the host's AI from managing them
@@ -98,6 +96,18 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.29 companions hired on a client vanished on rejoin (the server never heard of them) → `WorldEvent`s
+  CompanionJoined/CompanionLeft/HeroJoinedParty (15–17), checked by `HostSession.MayChangeCompanion`. Protocol 10.
+- v0.3.28 a player's own hero can be captured: their game runs single-player captivity (menus, escape, ransom
+  offers), the host makes the hero the same captor's prisoner and keeps their party leaderless and inactive
+  (`WorldBridge.CapturePlayerHero`, `CaptivityPatches` stop it disbanding), `HostSession.TickCaptivity` tells the
+  player when they're moved (dungeon) and gives a freed hero their party back; joining while captive works
+  (`WorldBridge.LeaveCaptivityForJoin`). Ledger uses `WorldBridge.PartyHero` (leader or kept-party owner). Protocol 9.
+  Also merged v0.3.26 (PR #3) into this branch.
+- v0.3.27 clan parties a player creates and their own armies stood frozen (the client's AI is off and the host never
+  heard of them) → host creates them from a client `PartySpawned`; army `WorldEvent`s 10–14; protocol 8.
+- v0.3.26 the host's AI spent players' focus/attribute points on level-up (`HeroDevelopmentPatches`), and unspent
+  points/level weren't in the ledger, so points vanished or went negative → `lvl`/`tx`/`uf`/`ua` keys.
 - v0.3.25 clan renown was never synced, so it reset to the server's copy on rejoin → `ren` ledger key.
 - v0.3.24 attack popup looping after a siege + crash on re-attack → client-side validation and grace period.
 - v0.3.23 host menu asks which save to load (with dates). v0.3.22 menu remembered the starting save instead
@@ -110,8 +120,9 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 ## Known limitations and next steps
 
 See README "Known limitations". Agreed plan after the owner's testing:
-1. The player's own hero being captured (prisoner on every machine, escape/ransom, rejoining while captured).
-2. Relations, companions (hire/dismiss), marriages applied on the host.
+1. ~~The player's own hero being captured~~ (v0.3.28, untested in-game). Companions captured with the player
+   still aren't synced.
+2. Relations and marriages applied on the host (companion hire/dismiss done in v0.3.29).
 3. Prisoners moved to dungeons / sold to ransom brokers.
 Later: raids and siege details, clan parties and caravans, quests, joint battles (largest), no world pause
 when a playing host fights, headless server research, correct icons for mirrored parties, live kingdom

@@ -48,7 +48,7 @@ namespace BannerlordMP.Game
             var ledger = new Dictionary<string, int>();
             if (party == null)
                 return ledger;
-            var hero = party.LeaderHero;
+            var hero = PartyHero(party);
             if (hero != null)
             {
                 ledger["g"] = hero.Gold;
@@ -59,6 +59,10 @@ namespace BannerlordMP.Game
                 }
                 ledger["hp"] = hero.HitPoints;
                 var developer = hero.HeroDeveloper;
+                ledger["lvl"] = hero.Level;
+                ledger["tx"] = developer.TotalXp;
+                ledger["uf"] = developer.UnspentFocusPoints;
+                ledger["ua"] = developer.UnspentAttributePoints;
                 foreach (var skill in Skills.All)
                 {
                     var xp = (int)Math.Floor(developer.GetSkillXp(skill));
@@ -91,16 +95,20 @@ namespace BannerlordMP.Game
             return ledger.Where(p => p.Value != 0).ToDictionary(p => p.Key, p => p.Value);
         }
 
-        /// <param name="onHost">
-        /// The host checks attribute and focus spending against the hero's unspent points, so a client cannot
-        /// grant itself points; the client applies whatever the host decided.
-        /// </param>
-        public static void ApplyLedgerDelta(MobileParty party, Dictionary<string, int> delta, bool onHost)
+        /// <summary>
+        /// Focus and attributes are applied as given: the player spent the points on their own machine, and the
+        /// unspent counts travel in their own entries.
+        /// </summary>
+        public static void ApplyLedgerDelta(MobileParty party, Dictionary<string, int> delta)
         {
             if (party == null || delta.Count == 0)
                 return;
-            var hero = party.LeaderHero;
+            var hero = PartyHero(party);
             var troopChanges = new Dictionary<(TroopRoster Roster, string Id), (int Count, int Wounded)>();
+            // Level, hero xp and unspent points only change through their own entries. Adding xp can level the
+            // hero up and grant points, and adding focus or attributes spends points; the player's game already
+            // did both and sent the result, so those side effects are undone after the loop.
+            var development = hero == null ? null : new DevelopmentCounters(hero);
             var equipmentChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
@@ -109,6 +117,8 @@ namespace BannerlordMP.Game
                 var change = pair.Value;
                 try
                 {
+                    if (development != null && development.Track(key, change))
+                        continue;
                     if (key == "g" && hero != null)
                         hero.Gold = Math.Max(0, hero.Gold + change);
                     else if (key == "inf" && hero?.Clan != null)
@@ -129,7 +139,7 @@ namespace BannerlordMP.Game
                         WithSkill(key, skill =>
                         {
                             if (change > 0)
-                                hero.HeroDeveloper.AddFocus(skill, change, onHost);
+                                hero.HeroDeveloper.AddFocus(skill, change, false);
                             else
                                 hero.HeroDeveloper.RemoveFocus(skill, -change);
                         });
@@ -137,7 +147,7 @@ namespace BannerlordMP.Game
                     {
                         var attribute = Attributes.All.FirstOrDefault(a => a.StringId == key.Substring(2));
                         if (attribute != null && change > 0)
-                            hero.HeroDeveloper.AddAttribute(attribute, change, onHost);
+                            hero.HeroDeveloper.AddAttribute(attribute, change, false);
                         else if (attribute != null)
                             hero.HeroDeveloper.RemoveAttribute(attribute, -change);
                     }
@@ -154,6 +164,15 @@ namespace BannerlordMP.Game
                 {
                     Log.Error($"Ledger entry {key}{change:+#;-#;0} failed", e);
                 }
+            }
+
+            try
+            {
+                development?.Apply(hero);
+            }
+            catch (Exception e)
+            {
+                Log.Error("Level and unspent points could not be applied", e);
             }
 
             // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
@@ -284,6 +303,71 @@ namespace BannerlordMP.Game
 
         public static string ElementKey(EquipmentElement element) => element.Item.StringId + "|" + (element.ItemModifier?.StringId ?? string.Empty);
 
+        /// <summary>Hero level, hero xp and unspent points: set to what they were plus the ledger's change.</summary>
+        private sealed class DevelopmentCounters
+        {
+            private int _level;
+            private int _totalXp;
+            private int _unspentFocus;
+            private int _unspentAttributes;
+
+            public DevelopmentCounters(Hero hero)
+            {
+                _level = hero.Level;
+                _totalXp = hero.HeroDeveloper.TotalXp;
+                _unspentFocus = hero.HeroDeveloper.UnspentFocusPoints;
+                _unspentAttributes = hero.HeroDeveloper.UnspentAttributePoints;
+            }
+
+            public bool Track(string key, int change)
+            {
+                switch (key)
+                {
+                    case "lvl":
+                        _level += change;
+                        return true;
+                    case "tx":
+                        _totalXp += change;
+                        return true;
+                    case "uf":
+                        _unspentFocus += change;
+                        return true;
+                    case "ua":
+                        _unspentAttributes += change;
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            public void Apply(Hero hero)
+            {
+                var developer = hero.HeroDeveloper;
+                hero.Level = Math.Max(1, _level);
+                if (developer.TotalXp != _totalXp)
+                    TotalXpProperty?.SetValue(developer, Math.Max(0, _totalXp));
+                developer.UnspentFocusPoints = _unspentFocus;
+                developer.UnspentAttributePoints = _unspentAttributes;
+            }
+        }
+
+        private static readonly System.Reflection.PropertyInfo TotalXpProperty =
+            HarmonyLib.AccessTools.Property(typeof(TaleWorlds.CampaignSystem.CharacterDevelopment.HeroDeveloper), "TotalXp");
+
+        /// <summary>
+        /// Points the host's AI spent for a player hero before v0.3.26 could leave the hero with fewer than zero
+        /// unspent points; the player could never spend again until they were back above zero.
+        /// </summary>
+        public static void RepairUnspentPoints(Hero hero)
+        {
+            var developer = hero?.HeroDeveloper;
+            if (developer == null || (developer.UnspentFocusPoints >= 0 && developer.UnspentAttributePoints >= 0))
+                return;
+            Log.Info($"Reset {hero.StringId}'s negative unspent points to 0 (focus {developer.UnspentFocusPoints}, attributes {developer.UnspentAttributePoints})");
+            developer.UnspentFocusPoints = Math.Max(0, developer.UnspentFocusPoints);
+            developer.UnspentAttributePoints = Math.Max(0, developer.UnspentAttributePoints);
+        }
+
         private static void WithSkill(string key, Action<SkillObject> action)
         {
             var skill = Skills.All.FirstOrDefault(s => s.StringId == key.Substring(2));
@@ -322,7 +406,16 @@ namespace BannerlordMP.Game
         {
             var existing = GameBridge.FindParty(message.PartyId);
             if (existing != null)
+            {
+                // A player's party that waited while its hero was a prisoner: the hero is free again on the server.
+                var owner = existing.IsActive ? null : KeptPartyOwner(existing);
+                if (owner != null && owner.IsAlive && !owner.IsPrisoner && owner != Hero.MainHero)
+                {
+                    Remote(() => RestoreKeptParty(owner, new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand)));
+                    MakePuppet(existing);
+                }
                 return existing;
+            }
 
             MobileParty party = null;
             Remote(() =>
@@ -369,6 +462,47 @@ namespace BannerlordMP.Game
             {
                 Log.Error("Could not make a puppet of " + party.StringId, e);
             }
+        }
+
+        /// <summary>
+        /// Host: a player created a party for one of their clan's heroes on their machine (clan screen). The real party
+        /// is made here as a lord party of that hero, with the id, position and troops their game gave it, so their
+        /// copy becomes its mirror. From then on the host's AI leads it, as single player's AI leads clan parties.
+        /// </summary>
+        /// <returns>Null when created, otherwise why not.</returns>
+        public static string CreatePlayerClanParty(Clan clan, PartySpawnedMessage message)
+        {
+            var leader = GameBridge.FindHero(message.LeaderHeroId);
+            if (clan == null || leader == null || leader.Clan != clan || leader == clan.Leader)
+                return "its leader is not a hero of your clan here";
+            if (!leader.IsAlive || leader.IsPrisoner)
+                return $"{leader.Name} is dead or a prisoner here";
+            var existing = GameBridge.FindParty(message.PartyId);
+            if (existing != null)
+                return existing.LeaderHero == leader ? null : "its id is already used by another party";
+            if (leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader)
+                return $"{leader.Name} already leads a party here";
+
+            string problem = null;
+            Remote(() =>
+            {
+                try
+                {
+                    // Here the hero is usually still a member of the player's party (heroes are not in the ledger).
+                    leader.PartyBelongedTo?.MemberRoster.AddToCounts(leader.CharacterObject, -1, false, 0, 0, true, -1);
+                    var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
+                    var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
+                    var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    GameBridge.ApplyRoster(party.MemberRoster, message.Members);
+                    GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Creating clan party {message.PartyId} for {leader.StringId} failed", e);
+                    problem = "the game refused";
+                }
+            });
+            return problem;
         }
 
         public static void ApplyRosters(MobileParty party, List<TroopCount> members, List<TroopCount> prisoners)
@@ -615,10 +749,17 @@ namespace BannerlordMP.Game
                             var captor = GameBridge.FindParty(message.B)?.Party ?? Find<Settlement>(message.B)?.Party;
                             if (prisoner == null || captor == null || !prisoner.IsAlive || prisoner.PartyBelongedToAsPrisoner == captor)
                                 break;
-                            // Players' heroes are captured only by their own game (their party would fall apart here).
+                            // Our own hero is taken prisoner only by our own game (a battle we lost). Afterwards the
+                            // server tells us where we are held (moved to a dungeon, taken by another party).
+                            if (Session.MpSession.Current is Session.ClientSession && prisoner == Hero.MainHero)
+                            {
+                                FollowOwnCaptivity(captor);
+                                break;
+                            }
+                            // Another player's hero (the host checked that its own player sent this): their party waits.
                             if (Session.MpSession.Current?.IsPlayedHero(prisoner) == true)
                             {
-                                Log.Info("Ignoring capture of a played hero " + message.A);
+                                CapturePlayerHero(prisoner, captor);
                                 break;
                             }
                             if (prisoner.IsPrisoner)
@@ -629,7 +770,24 @@ namespace BannerlordMP.Game
                         case WorldEventKind.HeroReleased:
                         {
                             var hero = GameBridge.FindHero(message.A);
-                            if (hero != null && hero.IsAlive && hero.IsPrisoner)
+                            if (hero == null || !hero.IsAlive)
+                                break;
+                            // Our own hero: the single-player captivity ends and brings our party back.
+                            if (Session.MpSession.Current is Session.ClientSession && hero == Hero.MainHero)
+                            {
+                                if (hero.IsPrisoner)
+                                {
+                                    EndCaptivityAction.ApplyByReleasedAfterBattle(hero);
+                                    CloseCaptivityMenu();
+                                }
+                                break;
+                            }
+                            if (Session.MpSession.Current?.IsPlayedHero(hero) == true)
+                            {
+                                ReleasePlayerHero(hero);
+                                break;
+                            }
+                            if (hero.IsPrisoner)
                                 EndCaptivityAction.ApplyByReleasedAfterBattle(hero);
                             break;
                         }
@@ -640,6 +798,46 @@ namespace BannerlordMP.Game
                                 KillCharacterAction.ApplyByBattle(victim, GameBridge.FindHero(message.B), false);
                             break;
                         }
+                        case WorldEventKind.CompanionJoined:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            var clan = Find<Clan>(message.B);
+                            if (hero == null || clan == null || !hero.IsAlive || hero.Clan == clan)
+                                break;
+                            AddCompanionAction.Apply(clan, hero);
+                            Log.Info($"{hero.StringId} is now a companion of {clan.StringId}");
+                            break;
+                        }
+                        case WorldEventKind.CompanionLeft:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            if (hero == null || hero.Clan == null || hero.CompanionOf == null)
+                                break;
+                            if (hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero)
+                                break; // Leading a party: the clan screen disbands it first, which arrives on its own.
+                            RemoveCompanionAction.ApplyByFire(hero.Clan, hero);
+                            break;
+                        }
+                        case WorldEventKind.HeroJoinedParty:
+                        {
+                            var hero = GameBridge.FindHero(message.A);
+                            var party = GameBridge.FindParty(message.B);
+                            if (hero == null || party == null || !hero.IsAlive || hero.IsPrisoner || hero.PartyBelongedTo == party)
+                                break;
+                            // Our own hero, and anyone leading a party, move by their own actions.
+                            if (hero == Hero.MainHero || (hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero))
+                                break;
+                            AddHeroToPartyAction.Apply(hero, party, false);
+                            Log.Info($"{hero.StringId} joined party {party.StringId}");
+                            break;
+                        }
+                        case WorldEventKind.ArmyCreated:
+                        case WorldEventKind.ArmyPartyJoined:
+                        case WorldEventKind.ArmyPartyAttached:
+                        case WorldEventKind.ArmyPartyLeft:
+                        case WorldEventKind.ArmyDispersed:
+                            ApplyArmyEvent(message);
+                            break;
                     }
                 }
                 catch (Exception e)
@@ -647,6 +845,364 @@ namespace BannerlordMP.Game
                     Log.Error("Could not apply world event " + message, e);
                 }
             });
+        }
+
+        // ----- Players' heroes in captivity -------------------------------------------------------------------
+
+        /// <summary>
+        /// The hero a player's party belongs to. Normally its leader; while that hero is a prisoner the party has no
+        /// leader (as the single-player main party during captivity), but gold, skills and gear still belong to them.
+        /// </summary>
+        public static Hero PartyHero(MobileParty party)
+        {
+            if (party == null)
+                return null;
+            if (party.LeaderHero != null)
+                return party.LeaderHero;
+            if (party == MobileParty.MainParty)
+                return Hero.MainHero;
+            return KeptPartyOwner(party);
+        }
+
+        /// <summary>The hero a leaderless lord party belongs to (a player's party waiting for its captive hero).</summary>
+        public static Hero KeptPartyOwner(MobileParty party)
+        {
+            if (party == null || party.LeaderHero != null)
+                return null;
+            return (party.PartyComponent as LordPartyComponent)?.Owner;
+        }
+
+        /// <summary>The party a player's hero left behind when taken prisoner: theirs, without a leader.</summary>
+        public static MobileParty FindKeptParty(Hero hero)
+        {
+            if (hero == null)
+                return null;
+            return MobileParty.All.FirstOrDefault(p => p != null && p.LeaderHero == null && KeptPartyOwner(p) == hero);
+        }
+
+        public static CampaignVec2 PlaceOf(PartyBase party)
+        {
+            if (party?.Settlement != null)
+                return party.Settlement.GatePosition;
+            return party?.MobileParty?.Position ?? party?.Position ?? CampaignVec2.Zero;
+        }
+
+        /// <summary>
+        /// A player's hero lost a battle on their own machine and was taken prisoner there. Here (on the server, and as
+        /// the mirror on other players' machines) the hero becomes the same captor's prisoner, and their party waits,
+        /// leaderless, hidden and untouchable, as single player keeps the main party while the player is a captive.
+        /// </summary>
+        public static void CapturePlayerHero(Hero hero, PartyBase captor)
+        {
+            if (hero == null || captor == null || !hero.IsAlive || hero.PartyBelongedToAsPrisoner == captor)
+                return;
+            if (hero.IsPrisoner)
+            {
+                // Already a prisoner here, held by someone else: just move them, as the server did.
+                MovePrisoner(hero, captor);
+                return;
+            }
+            var party = hero.PartyBelongedTo != null && hero.PartyBelongedTo.LeaderHero == hero ? hero.PartyBelongedTo : null;
+            if (party != null)
+            {
+                if (party.Army != null)
+                {
+                    if (party.Army.LeaderParty == party)
+                        DisbandArmyAction.ApplyByUnknownReason(party.Army);
+                    else
+                        party.Army = null;
+                }
+                if (party.CurrentSettlement != null)
+                    LeaveSettlementAction.ApplyForParty(party);
+            }
+            TakePrisonerAction.Apply(captor, hero);
+            HideKeptParty(party ?? FindKeptParty(hero));
+            Log.Info($"{hero.StringId} is now a prisoner of {captor.Id}; their party {party?.StringId ?? "(none)"} waits for them");
+        }
+
+        public static void HideKeptParty(MobileParty party)
+        {
+            if (party == null || party == MobileParty.MainParty || !party.IsActive)
+                return;
+            try
+            {
+                party.Ai.DisableAi();
+                party.IgnoreByOtherPartiesTill(CampaignTime.YearsFromNow(100));
+                party.IsDisbanding = false;
+                // An inactive party inside a settlement crashes the game's settlement lists (see GameBridge.Retire).
+                if (party.CurrentSettlement != null)
+                    LeaveSettlementAction.ApplyForParty(party);
+                party.IsVisible = false;
+                party.IsActive = false;
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not put away the party of a captive player " + party.StringId, e);
+            }
+        }
+
+        /// <summary>A player's hero is free again (escaped, ransomed, released): out of captivity and back at the head of their party.</summary>
+        public static MobileParty ReleasePlayerHero(Hero hero)
+        {
+            if (hero == null || !hero.IsAlive)
+                return null;
+            CampaignVec2? where = null;
+            if (hero.IsPrisoner)
+            {
+                where = PlaceOf(hero.PartyBelongedToAsPrisoner);
+                EndCaptivityAction.ApplyByReleasedAfterBattle(hero);
+            }
+            return RestoreKeptParty(hero, where);
+        }
+
+        /// <summary>Puts a free player hero back at the head of the party they left when captured. Null if there is nothing to do.</summary>
+        public static MobileParty RestoreKeptParty(Hero hero, CampaignVec2? where)
+        {
+            if (hero == null || !hero.IsAlive || hero.IsPrisoner || hero.PartyBelongedTo != null)
+                return null;
+            var party = FindKeptParty(hero);
+            if (party == null)
+                return null;
+            try
+            {
+                if (hero.CurrentSettlement != null)
+                    LeaveSettlementAction.ApplyForCharacterOnly(hero);
+                PutBackInParty(hero, party, where);
+                Log.Info($"{hero.StringId} leads their party {party.StringId} again");
+                return party;
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Could not put {hero.StringId} back in their party {party.StringId}", e);
+                return null;
+            }
+        }
+
+        private static void PutBackInParty(Hero hero, MobileParty party, CampaignVec2? where)
+        {
+            hero.ChangeState(Hero.CharacterStates.Active);
+            if (party.MemberRoster.FindIndexOfTroop(hero.CharacterObject) < 0)
+                party.MemberRoster.AddToCounts(hero.CharacterObject, 1, true, 0, 0, true, -1);
+            party.ChangePartyLeader(hero);
+            party.IsDisbanding = false;
+            if (where.HasValue && where.Value.IsValid())
+                party.Position = where.Value;
+            party.IsVisible = true;
+            party.IsActive = true;
+            party.Ai.DisableAi();
+            party.SetMoveModeHold();
+        }
+
+        private static void MovePrisoner(Hero hero, PartyBase captor)
+        {
+            var old = hero.PartyBelongedToAsPrisoner;
+            if (old == captor)
+                return;
+            old?.PrisonRoster.RemoveTroop(hero.CharacterObject, 1, default, 0);
+            captor.AddPrisoner(hero.CharacterObject, 1);
+        }
+
+        /// <summary>
+        /// Client: our hero is a prisoner and the server says someone else holds them now (taken to a dungeon, handed
+        /// to another party). Single player's captivity follows the new captor: its menus, escape and ransom.
+        /// </summary>
+        public static void FollowOwnCaptivity(PartyBase captor)
+        {
+            var hero = Hero.MainHero;
+            if (hero == null || captor == null || !hero.IsPrisoner || hero.PartyBelongedToAsPrisoner == captor)
+                return;
+            Log.Info($"Client: we are now held by {captor.Id} (was {hero.PartyBelongedToAsPrisoner?.Id})");
+            MovePrisoner(hero, captor);
+            PlayerCaptivity.CaptorParty = captor;
+            Campaign.Current.CameraFollowParty = captor;
+            ShowCaptivityMenu();
+        }
+
+        /// <summary>Opens the captivity menu that fits where we are held, the way the game picks it after a lost battle.</summary>
+        public static void ShowCaptivityMenu()
+        {
+            try
+            {
+                if (!PlayerCaptivity.IsCaptive || PlayerEncounter.Current != null)
+                    return;
+                var menu = Campaign.Current.Models.EncounterGameMenuModel.GetGenericStateMenu();
+                if (string.IsNullOrEmpty(menu))
+                    return;
+                if (Campaign.Current.CurrentMenuContext != null)
+                    TaleWorlds.CampaignSystem.GameMenus.GameMenu.SwitchToMenu(menu);
+                else
+                    TaleWorlds.CampaignSystem.GameMenus.GameMenu.ActivateGameMenu(menu);
+                Log.Info("Client: captivity menu " + menu);
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not open the captivity menu", e);
+            }
+        }
+
+        /// <summary>Freed by the server (a peace, a fallen castle): leave the captivity menu we were waiting in.</summary>
+        private static void CloseCaptivityMenu()
+        {
+            try
+            {
+                var id = Campaign.Current?.CurrentMenuContext?.GameMenu?.StringId ?? string.Empty;
+                if (!PlayerCaptivity.IsCaptive && (id.Contains("captiv") || id.Contains("prisoner")))
+                    TaleWorlds.CampaignSystem.GameMenus.GameMenu.ExitToLast();
+                Log.Info($"Client: freed by the server{(id.Length > 0 ? " (menu was " + id + ")" : "")}");
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not leave the captivity menu", e);
+            }
+        }
+
+        /// <summary>
+        /// Client joining while our hero is a prisoner on the server. The downloaded world has the hero in the captor's
+        /// prison and their party waiting without a leader. Put the hero at its head first, so taking control of the
+        /// hero makes that party (with the server's id) our main party; then be taken prisoner again by the same captor,
+        /// which starts single player's captivity.
+        /// </summary>
+        /// <returns>The captor to hand the hero back to once we control them, or null.</returns>
+        public static PartyBase LeaveCaptivityForJoin(Hero hero)
+        {
+            if (hero == null || !hero.IsPrisoner)
+                return null;
+            var captor = hero.PartyBelongedToAsPrisoner;
+            var party = FindKeptParty(hero);
+            if (captor == null || party == null)
+            {
+                Log.Info($"Client: {hero.StringId} is a prisoner but {(captor == null ? "has no captor" : "has no party")} here");
+                return null;
+            }
+            Remote(() =>
+            {
+                captor.PrisonRoster.RemoveTroop(hero.CharacterObject, 1, default, 0);
+                PutBackInParty(hero, party, PlaceOf(captor));
+            });
+            Log.Info($"Client: {hero.StringId} is held by {captor.Id}; taking control through their party {party.StringId}");
+            return captor;
+        }
+
+        public static void ReturnToCaptivity(Hero hero, PartyBase captor)
+        {
+            if (hero == null || captor == null || hero.IsPrisoner)
+                return;
+            Remote(() =>
+            {
+                TakePrisonerAction.Apply(captor, hero);
+                ShowCaptivityMenu();
+            });
+            Log.Info($"Client: back in captivity, held by {captor.Id} (captive: {PlayerCaptivity.IsCaptive})");
+        }
+
+        // ----- Armies -----------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Players' own armies. A player makes an army on their machine; the host makes the same army in the real
+        /// world, where its AI walks the called parties to the player's party and attaches them. Each attachment
+        /// comes back so the player's game attaches them too, and they move with the player. A client only ever
+        /// changes its own army here: other armies are just parties the host moves.
+        /// </summary>
+        private static void ApplyArmyEvent(WorldEventMessage message)
+        {
+            var onClient = Session.MpSession.Current is Session.ClientSession;
+            switch (message.Kind)
+            {
+                case WorldEventKind.ArmyCreated:
+                {
+                    // The client that proposed it made this army itself; only the host has to create it.
+                    var leader = GameBridge.FindHero(message.A);
+                    var leaderParty = leader?.PartyBelongedTo;
+                    var kingdom = leader?.Clan?.Kingdom;
+                    if (onClient || leaderParty == null || leaderParty.LeaderHero != leader || leaderParty.Army != null || kingdom == null)
+                        break;
+                    var parts = (message.B ?? string.Empty).Split('|');
+                    var type = int.TryParse(parts[0], out var t) && Enum.IsDefined(typeof(Army.ArmyTypes), t) ? (Army.ArmyTypes)t : Army.ArmyTypes.Patrolling;
+                    var target = parts.Length > 1 ? Find<Settlement>(parts[1]) : null;
+                    KeepInfluence(leader.Clan, () => kingdom.CreateArmy(leader, target, type, new MBList<MobileParty>()));
+                    Log.Info($"Army of {leader.StringId} created ({type}, target {target?.StringId ?? "none"}): {leaderParty.Army != null}");
+                    break;
+                }
+                case WorldEventKind.ArmyPartyJoined:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = leaderParty?.Army;
+                    if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty || party.Army == army)
+                        break;
+                    if (party.Army != null || (onClient && leaderParty != MobileParty.MainParty))
+                        break;
+                    KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
+                    if (onClient)
+                        MakePuppet(party);
+                    else if (party.MapEvent == null)
+                        party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                    break;
+                }
+                case WorldEventKind.ArmyPartyAttached:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = leaderParty?.Army;
+                    if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty
+                        || party.AttachedTo == leaderParty || party.MapEvent != null)
+                        break;
+                    if (onClient && leaderParty != MobileParty.MainParty)
+                        break;
+                    if (party.Army != army)
+                    {
+                        if (party.Army != null)
+                            break;
+                        KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
+                    }
+                    army.AddPartyToMergedParties(party);
+                    break;
+                }
+                case WorldEventKind.ArmyPartyLeft:
+                {
+                    var party = GameBridge.FindParty(message.A);
+                    var leaderParty = GameBridge.FindParty(message.B);
+                    var army = party?.Army;
+                    // The leader leaving is the army breaking up, which arrives as its own event.
+                    if (army == null || army.LeaderParty != leaderParty || party == leaderParty)
+                        break;
+                    if (onClient && leaderParty != MobileParty.MainParty)
+                        break;
+                    party.Army = null;
+                    if (party.AttachedTo != null)
+                        party.AttachedTo = null;
+                    if (onClient)
+                        MakePuppet(party);
+                    break;
+                }
+                case WorldEventKind.ArmyDispersed:
+                {
+                    var leaderParty = GameBridge.FindParty(message.A);
+                    var army = leaderParty?.Army;
+                    if (army == null || army.LeaderParty != leaderParty || (onClient && leaderParty != MobileParty.MainParty))
+                        break;
+                    var members = army.Parties.Where(p => p != leaderParty).ToList();
+                    DisbandArmyAction.ApplyByUnknownReason(army);
+                    if (onClient)
+                        members.ForEach(MakePuppet);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>Influence spent on an army is paid on the player's machine and arrives through the ledger, never twice.</summary>
+        private static void KeepInfluence(Clan clan, Action action)
+        {
+            var influence = clan?.Influence ?? 0f;
+            try
+            {
+                action();
+            }
+            finally
+            {
+                if (clan != null)
+                    clan.Influence = influence;
+            }
         }
 
         public static IFaction FindFaction(string id)

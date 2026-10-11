@@ -69,10 +69,14 @@ produced them.** Menus and dialogue run locally; their effects on the world trav
 | Troops of parties near a player | Host | `PartyRoster` within 30 map units, when changed |
 | Settlement owners, war, peace, clan ↔ kingdom, hero deaths | Host; a client proposes the ones its player caused | `WorldEvent`; every apply is idempotent, so the proposer can receive its own event back |
 | The player's party and hero (incl. worn equipment) | Both, merged | Ledger (below) |
-| Lords captured / freed | Host; a client proposes the ones its battles caused | `WorldEvent` HeroCaptured / HeroReleased (players' heroes excluded) |
+| Lords captured / freed | Host; a client proposes the ones its battles caused | `WorldEvent` HeroCaptured / HeroReleased |
+| Companions hired, dismissed, moved between parties | The player | Client proposes CompanionJoined / CompanionLeft / HeroJoinedParty for its own clan only; the host applies and relays |
+| A player's own hero captured | The player's game (single-player captivity: menus, escape, ransom offers); the host for where the hero is held and for releases its world causes (peace, a fallen castle) | Client proposes HeroCaptured / HeroReleased for its own hero only. The host makes the hero the captor's prisoner and keeps the party leaderless and inactive (`CaptivityPatches` stop the game disbanding it); `TickCaptivity` sends HeroCaptured when the hero is moved and gives a freed hero their party back. Joining while captive: the client puts the hero back in that party, takes control, and is taken prisoner again by the same captor |
 | Town and village markets | Host | `MarketRequest` on entering → `MarketState` (stock, gold, prosperity, category supply/demand); `MarketChange` (the diff) on leaving |
 | AI attacking a player | Host detects, client fights | `EncounterRequest` → the client starts the encounter locally |
 | A battle a client fights | That client | `BattleStarted` (host freezes the parties) → `BattleResult` (host applies enemy losses, destroys losers) |
+| A clan party a player creates | Created by the client, then led by the host's AI | The client sends `PartySpawned` for it and makes its copy a puppet; the host creates the real party with the same id (`WorldBridge.CreatePlayerClanParty`) and mirrors it like any other |
+| A player's own army | The player creates, calls, dismisses and disbands; the host gathers and attaches | `WorldEvent` ArmyCreated / ArmyPartyJoined (the client resends the whole army when it changes) / ArmyPartyAttached / ArmyPartyLeft / ArmyDispersed. Influence is paid on the client only (ledger). The army's hourly turn (cohesion, dispersal) runs on the client; the host skips it (`ArmyPatches`) and breaks the army up when its leader leaves |
 | AI-vs-AI battles | Host | Clients can't start encounters that don't involve their own party |
 
 ### The ledger
@@ -141,7 +145,7 @@ The order is chosen so that each step removes a limitation and makes the next on
    sieges and raids in progress, quests, relations, marriages, companions, equipment.
 3. **Interactions as host-validated commands:** trade against the server's markets, recruiting from
    its notables, quests, dialogue outcomes, clan and kingdom actions, sieges and raids.
-4. **Hero death and capture sync**, and respawning. (New heroes use the single-player character
+4. **Hero death and capture sync** (players' own heroes captured: v0.3.28), and respawning. (New heroes use the single-player character
    creator since v0.3.16.)
 5. **Joint battles** (several players in one battle) using the multiplayer mission stack.
 6. **Headless server (research).** The campaign map needs the game engine (map scene, navigation mesh),

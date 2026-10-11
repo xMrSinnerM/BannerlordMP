@@ -40,8 +40,37 @@ namespace BannerlordMP.Game
                 if (party != null && party == MobileParty.MainParty)
                     Forward(s => s.OnLocalSettlementLeft(settlement));
             });
+            CampaignEvents.NewCompanionAdded.AddNonSerializedListener(this, hero =>
+                World(WorldEventKind.CompanionJoined, hero?.StringId, hero?.Clan?.StringId));
+            CampaignEvents.CompanionRemoved.AddNonSerializedListener(this, (hero, detail) =>
+                World(WorldEventKind.CompanionLeft, hero?.StringId, string.Empty));
+            CampaignEvents.OnHeroJoinedPartyEvent.AddNonSerializedListener(this, (hero, party) =>
+            {
+                if (hero != null && party != null)
+                    Forward(s => s.OnLocalHeroJoinedParty(hero, party));
+            });
             CampaignEvents.HeroKilledEvent.AddNonSerializedListener(this, (victim, killer, detail, notify) =>
                 World(WorldEventKind.HeroKilled, victim?.StringId, killer?.StringId ?? string.Empty));
+            CampaignEvents.ArmyCreated.AddNonSerializedListener(this, army =>
+                ArmyEvent(WorldEventKind.ArmyCreated, army?.LeaderParty, army?.LeaderParty));
+            CampaignEvents.OnPartyJoinedArmyEvent.AddNonSerializedListener(this, party =>
+                ArmyEvent(WorldEventKind.ArmyPartyJoined, party?.Army?.LeaderParty, party));
+            CampaignEvents.PartyAttachedAnotherParty.AddNonSerializedListener(this, party =>
+                ArmyEvent(WorldEventKind.ArmyPartyAttached, party?.AttachedTo, party));
+            CampaignEvents.OnPartyLeftArmyEvent.AddNonSerializedListener(this, (party, army) =>
+                ArmyEvent(WorldEventKind.ArmyPartyLeft, army?.LeaderParty, party));
+            CampaignEvents.ArmyDispersed.AddNonSerializedListener(this, (army, reason, isPlayersArmy) =>
+                ArmyEvent(WorldEventKind.ArmyDispersed, army?.LeaderParty, army?.LeaderParty));
+        }
+
+        private static void ArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
+        {
+            if (leader == null || party == null)
+                return;
+            // The leader joining or attaching to its own army is not news.
+            if (party == leader && kind != WorldEventKind.ArmyCreated && kind != WorldEventKind.ArmyDispersed)
+                return;
+            Forward(s => s.OnLocalArmyEvent(kind, leader, party));
         }
 
         private static void World(WorldEventKind kind, string a, string b)

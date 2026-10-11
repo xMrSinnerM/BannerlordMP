@@ -22,7 +22,7 @@ namespace BannerlordMP.Patches
     {
         public static bool IsPlayerParty(MobileParty party)
         {
-            return party != null && MpSession.Current is HostSession host && host.IsPlayerHero(party.LeaderHero);
+            return party != null && MpSession.Current is HostSession host && host.IsPlayerHero(Game.WorldBridge.PartyHero(party));
         }
 
         /// <summary>No wage limit for a player's party (a single-player main party has none).</summary>

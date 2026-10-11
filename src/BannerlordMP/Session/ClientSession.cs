@@ -108,7 +108,11 @@ namespace BannerlordMP.Session
             ReportSyncChange(decision);
 
             ReplayBuffered(GameBridge.NowHours);
+            SendCreatedParties();
+            SyncOwnArmy();
+            TickOwnArmyHourly();
             TickDailyFinances();
+            LogCaptivity();
             ShowPendingVote();
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
@@ -238,6 +242,115 @@ namespace BannerlordMP.Session
             _encounterWith = null;
         }
 
+        /// <summary>Parties our game created this frame; looked at next frame, once they have troops and a clan.</summary>
+        private readonly List<MobileParty> _createdParties = new List<MobileParty>();
+        /// <summary>Parties whose AI our game may have woken (army orders); made puppets again next frame.</summary>
+        private readonly List<MobileParty> _repuppet = new List<MobileParty>();
+        private bool _ownArmyChanged;
+        private int _armyHour = -1;
+        private static readonly System.Reflection.MethodInfo ArmyHourlyTick = HarmonyLib.AccessTools.Method(typeof(Army), "HourlyTick");
+        private bool _armyTickFailed;
+
+        public override void OnLocalPartyCreated(MobileParty party)
+        {
+            if (_welcomed && !WorldBridge.ApplyingRemote && party != null)
+                _createdParties.Add(party);
+        }
+
+        public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
+        {
+            // Only our own army, and only what the player did (not what the host told us).
+            if (!_welcomed || WorldBridge.ApplyingRemote || leader != MobileParty.MainParty)
+                return;
+            if (party != MobileParty.MainParty)
+                _repuppet.Add(party);
+            switch (kind)
+            {
+                case WorldEventKind.ArmyCreated:
+                case WorldEventKind.ArmyPartyJoined:
+                case WorldEventKind.ArmyPartyAttached:
+                    // The game raises these in an order that depends on how the army was made; send the whole army
+                    // next frame instead (applying it twice changes nothing).
+                    _ownArmyChanged = true;
+                    break;
+                default:
+                    var message = DescribeArmyEvent(kind, leader, party);
+                    Log.Info("Proposing to the host: " + message);
+                    Net.SendToAll(message);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// A party the player made for a clan hero exists only here; on its own it never moves, because this world's
+        /// AI is off. The host creates the real one (with this id) and leads it; ours becomes its mirror.
+        /// </summary>
+        private void SendCreatedParties()
+        {
+            if (_createdParties.Count == 0)
+                return;
+            foreach (var party in _createdParties)
+            {
+                if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || party.ActualClan != Clan.PlayerClan)
+                    continue;
+                if (!party.IsLordParty || party.LeaderHero == null)
+                {
+                    Log.Info($"Client: created party {party.StringId} is not a clan party; the server does not know about it");
+                    continue;
+                }
+                Log.Info($"Client: created clan party {party.StringId} led by {party.LeaderHero.StringId}; asking the host to create it");
+                Net.SendToAll(WorldBridge.DescribeParty(party, GameBridge.NowHours));
+                WorldBridge.MakePuppet(party);
+            }
+            _createdParties.Clear();
+            Parties.Rebuild(RealSeconds);
+        }
+
+        private void SyncOwnArmy()
+        {
+            foreach (var party in _repuppet)
+                WorldBridge.MakePuppet(party);
+            _repuppet.Clear();
+
+            var main = MobileParty.MainParty;
+            var army = main?.Army;
+            if (!_ownArmyChanged)
+                return;
+            _ownArmyChanged = false;
+            if (army == null || army.LeaderParty != main)
+                return;
+            var messages = new List<WorldEventMessage> { DescribeArmyEvent(WorldEventKind.ArmyCreated, main, main) };
+            messages.AddRange(army.Parties.Where(p => p != null && p != main).Select(p => DescribeArmyEvent(WorldEventKind.ArmyPartyJoined, main, p)));
+            Log.Info($"Client: our army changed; sending it to the host ({messages.Count - 1} parties called)");
+            foreach (var message in messages)
+                Net.SendToAll(message);
+        }
+
+        /// <summary>
+        /// The army's hourly turn (cohesion, breaking up) runs on its leader's machine, as for the player's army in
+        /// single player; this world's scheduler is off, so it is called here. The host skips it for our army.
+        /// </summary>
+        private void TickOwnArmyHourly()
+        {
+            var hour = (int)Math.Floor(GameBridge.NowHours);
+            if (hour == _armyHour)
+                return;
+            var first = _armyHour < 0;
+            _armyHour = hour;
+            var army = MobileParty.MainParty?.Army;
+            if (first || _armyTickFailed || ArmyHourlyTick == null || army == null || army.LeaderParty != MobileParty.MainParty)
+                return;
+            try
+            {
+                ArmyHourlyTick.Invoke(army, new object[] { null, null });
+            }
+            catch (Exception e)
+            {
+                _armyTickFailed = true;
+                Log.Error("The army's hourly turn failed; your army will not lose cohesion", e);
+            }
+        }
+
         public override void OnLocalPartyDestroyed(MobileParty party)
         {
             // Only the host decides which parties stop existing; local destructions come from our own battles,
@@ -252,6 +365,14 @@ namespace BannerlordMP.Session
             var message = new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = kind, A = a, B = b };
             Log.Info("Proposing to the host: " + message);
             Net.SendToAll(message);
+        }
+
+        /// <summary>The player put a companion in their party (hired, or moved from another of their parties): tell the host.</summary>
+        public override void OnLocalHeroJoinedParty(Hero hero, MobileParty party)
+        {
+            if (!_welcomed || WorldBridge.ApplyingRemote || IsPlayerCharacter(hero) || party.ActualClan != Clan.PlayerClan || party.StringId == null)
+                return;
+            OnLocalWorldEvent(WorldEventKind.HeroJoinedParty, hero.StringId, party.StringId);
         }
 
         public override void SendChat(string text)
@@ -389,6 +510,8 @@ namespace BannerlordMP.Session
             }
             _playerId = welcome.PlayerId;
             Log.Info($"Client: welcomed as player {_playerId}; taking control of {hero.StringId} (main hero now {Hero.MainHero?.StringId})");
+            // A prisoner on the server: take control through the party they left behind, then go back to the captor.
+            var captor = WorldBridge.LeaveCaptivityForJoin(hero);
             GameBridge.TakeControlOf(hero);
             Log.Info($"Client: main hero is {Hero.MainHero?.StringId}, main party {MobileParty.MainParty?.StringId}, clan {Clan.PlayerClan?.StringId}");
             GameBridge.ReleaseOwnParty();
@@ -406,6 +529,11 @@ namespace BannerlordMP.Session
                 }
             }
             Parties.Rebuild(RealSeconds);
+            if (captor != null)
+            {
+                WorldBridge.ReturnToCaptivity(hero, captor);
+                Log.Notify($"{hero.Name} is still a prisoner. Wait for a chance to escape, a ransom offer or a peace.");
+            }
             _welcomed = true;
             Log.Info($"Client: {count} parties are now puppets; mirroring the host's world");
             Log.Notify($"Joined! You are {hero.Name}.");
@@ -685,6 +813,23 @@ namespace BannerlordMP.Session
             _financeDay = day;
         }
 
+        private int _captiveDayLogged = -1;
+
+        /// <summary>A line a day while we are a prisoner, so a log shows whether single player's captivity is running.</summary>
+        private void LogCaptivity()
+        {
+            if (!PlayerCaptivity.IsCaptive)
+            {
+                _captiveDayLogged = -1;
+                return;
+            }
+            var day = PlayerCaptivity.CaptiveTimeInDays;
+            if (day == _captiveDayLogged)
+                return;
+            _captiveDayLogged = day;
+            Log.Info($"Client: prisoner for {day} day(s), held by {PlayerCaptivity.CaptorParty?.Id}, menu {Campaign.Current?.CurrentMenuContext?.GameMenu?.StringId ?? "none"}");
+        }
+
         private void SendLedgerChanges()
         {
             var change = _ledger.Capture(WorldBridge.CaptureLedger(MobileParty.MainParty));
@@ -705,7 +850,7 @@ namespace BannerlordMP.Session
             var predicted = _ledger.Reconcile(state.AckSeq, state.State);
             var correction = Ledger.Diff(WorldBridge.CaptureLedger(main), predicted);
             if (correction.Count > 0)
-                WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(main, correction, onHost: false));
+                WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(main, correction));
             _ledger.Rebase(WorldBridge.CaptureLedger(main));
         }
 
