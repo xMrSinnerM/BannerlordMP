@@ -98,7 +98,7 @@ namespace BannerlordMP.Session
                 {
                     var party = Parties.Find(Players[playerId].PartyId, RealSeconds);
                     EnforcePlayerGold(party?.LeaderHero);
-                    WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(party, delta.Delta, onHost: true));
+                    WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(party, delta.Delta));
                     RememberPlayerGold(party?.LeaderHero);
                     _ledgerAck[playerId] = delta.Seq;
                     return true;
@@ -211,6 +211,7 @@ namespace BannerlordMP.Session
         {
             // Restores what the hero had when its owner last played (or when the server started).
             EnforcePlayerGold(party.LeaderHero);
+            WorldBridge.RepairUnspentPoints(party.LeaderHero);
             RememberPlayerGold(party.LeaderHero);
             _rostersSent[playerId] = new Dictionary<string, int>();
             _ledgerAck[playerId] = 0;

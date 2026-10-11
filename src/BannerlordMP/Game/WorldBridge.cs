@@ -59,6 +59,10 @@ namespace BannerlordMP.Game
                 }
                 ledger["hp"] = hero.HitPoints;
                 var developer = hero.HeroDeveloper;
+                ledger["lvl"] = hero.Level;
+                ledger["tx"] = developer.TotalXp;
+                ledger["uf"] = developer.UnspentFocusPoints;
+                ledger["ua"] = developer.UnspentAttributePoints;
                 foreach (var skill in Skills.All)
                 {
                     var xp = (int)Math.Floor(developer.GetSkillXp(skill));
@@ -91,16 +95,20 @@ namespace BannerlordMP.Game
             return ledger.Where(p => p.Value != 0).ToDictionary(p => p.Key, p => p.Value);
         }
 
-        /// <param name="onHost">
-        /// The host checks attribute and focus spending against the hero's unspent points, so a client cannot
-        /// grant itself points; the client applies whatever the host decided.
-        /// </param>
-        public static void ApplyLedgerDelta(MobileParty party, Dictionary<string, int> delta, bool onHost)
+        /// <summary>
+        /// Focus and attributes are applied as given: the player spent the points on their own machine, and the
+        /// unspent counts travel in their own entries.
+        /// </summary>
+        public static void ApplyLedgerDelta(MobileParty party, Dictionary<string, int> delta)
         {
             if (party == null || delta.Count == 0)
                 return;
             var hero = party.LeaderHero;
             var troopChanges = new Dictionary<(TroopRoster Roster, string Id), (int Count, int Wounded)>();
+            // Level, hero xp and unspent points only change through their own entries. Adding xp can level the
+            // hero up and grant points, and adding focus or attributes spends points; the player's game already
+            // did both and sent the result, so those side effects are undone after the loop.
+            var development = hero == null ? null : new DevelopmentCounters(hero);
             var equipmentChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
@@ -109,6 +117,8 @@ namespace BannerlordMP.Game
                 var change = pair.Value;
                 try
                 {
+                    if (development != null && development.Track(key, change))
+                        continue;
                     if (key == "g" && hero != null)
                         hero.Gold = Math.Max(0, hero.Gold + change);
                     else if (key == "inf" && hero?.Clan != null)
@@ -129,7 +139,7 @@ namespace BannerlordMP.Game
                         WithSkill(key, skill =>
                         {
                             if (change > 0)
-                                hero.HeroDeveloper.AddFocus(skill, change, onHost);
+                                hero.HeroDeveloper.AddFocus(skill, change, false);
                             else
                                 hero.HeroDeveloper.RemoveFocus(skill, -change);
                         });
@@ -137,7 +147,7 @@ namespace BannerlordMP.Game
                     {
                         var attribute = Attributes.All.FirstOrDefault(a => a.StringId == key.Substring(2));
                         if (attribute != null && change > 0)
-                            hero.HeroDeveloper.AddAttribute(attribute, change, onHost);
+                            hero.HeroDeveloper.AddAttribute(attribute, change, false);
                         else if (attribute != null)
                             hero.HeroDeveloper.RemoveAttribute(attribute, -change);
                     }
@@ -154,6 +164,15 @@ namespace BannerlordMP.Game
                 {
                     Log.Error($"Ledger entry {key}{change:+#;-#;0} failed", e);
                 }
+            }
+
+            try
+            {
+                development?.Apply(hero);
+            }
+            catch (Exception e)
+            {
+                Log.Error("Level and unspent points could not be applied", e);
             }
 
             // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
@@ -283,6 +302,71 @@ namespace BannerlordMP.Game
         }
 
         public static string ElementKey(EquipmentElement element) => element.Item.StringId + "|" + (element.ItemModifier?.StringId ?? string.Empty);
+
+        /// <summary>Hero level, hero xp and unspent points: set to what they were plus the ledger's change.</summary>
+        private sealed class DevelopmentCounters
+        {
+            private int _level;
+            private int _totalXp;
+            private int _unspentFocus;
+            private int _unspentAttributes;
+
+            public DevelopmentCounters(Hero hero)
+            {
+                _level = hero.Level;
+                _totalXp = hero.HeroDeveloper.TotalXp;
+                _unspentFocus = hero.HeroDeveloper.UnspentFocusPoints;
+                _unspentAttributes = hero.HeroDeveloper.UnspentAttributePoints;
+            }
+
+            public bool Track(string key, int change)
+            {
+                switch (key)
+                {
+                    case "lvl":
+                        _level += change;
+                        return true;
+                    case "tx":
+                        _totalXp += change;
+                        return true;
+                    case "uf":
+                        _unspentFocus += change;
+                        return true;
+                    case "ua":
+                        _unspentAttributes += change;
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            public void Apply(Hero hero)
+            {
+                var developer = hero.HeroDeveloper;
+                hero.Level = Math.Max(1, _level);
+                if (developer.TotalXp != _totalXp)
+                    TotalXpProperty?.SetValue(developer, Math.Max(0, _totalXp));
+                developer.UnspentFocusPoints = _unspentFocus;
+                developer.UnspentAttributePoints = _unspentAttributes;
+            }
+        }
+
+        private static readonly System.Reflection.PropertyInfo TotalXpProperty =
+            HarmonyLib.AccessTools.Property(typeof(TaleWorlds.CampaignSystem.CharacterDevelopment.HeroDeveloper), "TotalXp");
+
+        /// <summary>
+        /// Points the host's AI spent for a player hero before v0.3.26 could leave the hero with fewer than zero
+        /// unspent points; the player could never spend again until they were back above zero.
+        /// </summary>
+        public static void RepairUnspentPoints(Hero hero)
+        {
+            var developer = hero?.HeroDeveloper;
+            if (developer == null || (developer.UnspentFocusPoints >= 0 && developer.UnspentAttributePoints >= 0))
+                return;
+            Log.Info($"Reset {hero.StringId}'s negative unspent points to 0 (focus {developer.UnspentFocusPoints}, attributes {developer.UnspentAttributePoints})");
+            developer.UnspentFocusPoints = Math.Max(0, developer.UnspentFocusPoints);
+            developer.UnspentAttributePoints = Math.Max(0, developer.UnspentAttributePoints);
+        }
 
         private static void WithSkill(string key, Action<SkillObject> action)
         {

@@ -115,7 +115,7 @@ happens.
 | Troops of parties near you | Kept accurate, so the army you attack is the real one |
 | Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
 | Town and village markets | When you enter, your game gets the server's real stock, gold, prosperity and prices; when you leave, what you bought and sold goes back to the server, so the next player finds the market as you left it |
-| Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, skill xp, attribute and focus points, clan renown and influence, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
+| Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, level, skill xp, attribute and focus points (spent and unspent), clan renown and influence, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
