@@ -574,6 +574,27 @@ namespace BannerlordMP.Game
             return change;
         }
 
+        /// <summary>Client: what today's clan finances are made of, for the log.</summary>
+        public static string DescribeClanFinances()
+        {
+            var clan = Clan.PlayerClan;
+            if (clan == null)
+                return "no clan";
+            var lines = Campaign.Current.Models.ClanFinanceModel.CalculateClanGoldChange(clan, true, false, true).GetLines();
+            return lines == null || lines.Count == 0 ? "nothing" : string.Join(", ", lines.Select(l => $"{l.Item1} {l.Item2:+0;-0;0}"));
+        }
+
+        /// <summary>Client: food, eaters and clan parties, for the daily log line.</summary>
+        public static string DescribeOwnSupplies()
+        {
+            var main = MobileParty.MainParty;
+            if (main == null)
+                return "no party";
+            var clanParties = Clan.PlayerClan?.WarPartyComponents?.Count ?? 0;
+            return $"{main.TotalFoodAtInventory} food, uses {-main.FoodChange:0.0} a day, {main.MemberRoster.TotalManCount} men, "
+                   + $"{main.PrisonRoster.TotalManCount} prisoners, {Hero.MainHero?.Gold} gold, {clanParties} clan war parties";
+        }
+
         public static bool AtMainMenu => GameStateManager.Current?.ActiveState is InitialState;
 
         public static bool OnCampaignMap => Campaign.Current != null && GameStateManager.Current?.ActiveState is MapState;

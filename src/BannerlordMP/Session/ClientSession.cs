@@ -141,8 +141,24 @@ namespace BannerlordMP.Session
             if (attacker != main && defender != main)
                 return false;
             var other = attacker == main ? defender : attacker;
-            return !IsPlayerParty(other);
+            if (IsPlayerParty(other))
+                return false;
+            // Every other party here is a puppet, and who catches whom is the host's call (EncounterRequest, checked
+            // in HandleEncounterRequest). A puppet can still carry an old chase order from the save or from before a
+            // siege; the game then kept attacking us with a party that was already beaten here, the attack menu came
+            // back however often it was closed, and fighting it crashed the game.
+            if (attacker != main && attacker != null && !_startingRequestedEncounter)
+            {
+                if (_blockedEncounterLogged.Add(attacker.StringId ?? "?"))
+                    Log.Info($"Client: blocked an attack on us by {attacker.StringId} that the server did not ask for ({WorldBridge.WhyNoEncounter(attacker) ?? "fightable here"})");
+                return false;
+            }
+            return true;
         }
+
+        /// <summary>True while starting an encounter the host asked for; any other AI attack on us is refused.</summary>
+        private bool _startingRequestedEncounter;
+        private readonly HashSet<string> _blockedEncounterLogged = new HashSet<string>();
 
         public override void OnLocalBattleEnded(MapEvent mapEvent)
         {
@@ -214,7 +230,17 @@ namespace BannerlordMP.Session
             {
                 try
                 {
-                    if (WorldBridge.StartEncounterWith(attacker))
+                    bool started;
+                    _startingRequestedEncounter = true;
+                    try
+                    {
+                        started = WorldBridge.StartEncounterWith(attacker);
+                    }
+                    finally
+                    {
+                        _startingRequestedEncounter = false;
+                    }
+                    if (started)
                     {
                         _encounterWith = attackerId;
                         Log.Info($"Client: {attackerId} caught us; encounter started");
@@ -826,8 +852,9 @@ namespace BannerlordMP.Session
                 _financeDay++;
                 try
                 {
+                    var breakdown = GameBridge.DescribeClanFinances();
                     var change = GameBridge.ApplyDailyClanFinances();
-                    Log.Info($"Client: daily clan finances for day {_financeDay}: {change:+#;-#;0} gold");
+                    Log.Info($"Client: daily clan finances for day {_financeDay}: {change:+#;-#;0} gold ({breakdown}); {GameBridge.DescribeOwnSupplies()}");
                 }
                 catch (Exception e)
                 {

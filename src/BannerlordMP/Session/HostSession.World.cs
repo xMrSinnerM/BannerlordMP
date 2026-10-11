@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Core.Protocol;
@@ -183,6 +184,39 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>The player's party, also while it waits for its captive hero (inactive, so the party cache skips it).</summary>
+        private int _upkeepDay = -1;
+        private readonly Dictionary<string, int> _foodYesterday = new Dictionary<string, int>();
+
+        /// <summary>
+        /// A line a day per player: food, eaters and gold as the server sees them, so a log shows where supplies
+        /// go when a player says they run out too fast.
+        /// </summary>
+        private void LogPlayerUpkeep()
+        {
+            var day = (int)Math.Floor(GameBridge.NowHours / 24);
+            if (day == _upkeepDay)
+                return;
+            _upkeepDay = day;
+            foreach (var player in Players.Values.Where(p => p.Id != HostPlayerId))
+            {
+                try
+                {
+                    var party = PlayerParty(player.Id);
+                    if (party == null)
+                        continue;
+                    var food = party.TotalFoodAtInventory;
+                    var since = _foodYesterday.TryGetValue(party.StringId, out var before) ? $" ({food - before:+#;-#;0} since yesterday)" : string.Empty;
+                    _foodYesterday[party.StringId] = food;
+                    Log.Info($"Day {day}: {player.Name}'s party has {food} food{since}, uses {-party.FoodChange:0.0} a day, {party.MemberRoster.TotalManCount} men, "
+                             + $"{party.PrisonRoster.TotalManCount} prisoners, {WorldBridge.PartyHero(party)?.Gold} gold{(IsPlayerPartyAway(party) ? ", away" : string.Empty)}");
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Upkeep log failed", e);
+                }
+            }
+        }
+
         private MobileParty PlayerParty(int playerId)
         {
             if (!Players.TryGetValue(playerId, out var player))
@@ -409,7 +443,8 @@ namespace BannerlordMP.Session
                 {
                     if (chaser == null || chaser == target || !chaser.IsActive || chaser.MapEvent != null || chaser.CurrentSettlement != null
                         || chaser.MapFaction == null || IsRemotePlayerParty(chaser) || IsBattleFrozen(chaser) || chaser.ShouldBeIgnored
-                        || chaser.BesiegedSettlement != null || chaser.MemberRoster.TotalHealthyCount <= 0)
+                        || chaser.BesiegedSettlement != null || chaser.MemberRoster.TotalHealthyCount <= 0
+                        || chaser.IsGarrison || chaser.IsMilitia || (chaser.LeaderHero != null && chaser.LeaderHero.IsPrisoner))
                         continue;
                     if (chaser.TargetParty != target && chaser.ShortTermTargetParty != target)
                         continue;

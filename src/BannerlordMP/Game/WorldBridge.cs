@@ -4,6 +4,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.CharacterDevelopment;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Extensions;
 using TaleWorlds.CampaignSystem.Party;
@@ -74,6 +75,13 @@ namespace BannerlordMP.Game
                 }
                 foreach (var attribute in Attributes.All)
                     ledger["a:" + attribute.StringId] = hero.GetAttributeValue(attribute);
+                // Perks the player picked ("k:" + perk = 1). They were never sent, so the server's copy of the hero
+                // had none of them and every rejoin brought the hero back without their chosen perks.
+                foreach (var perk in PerkObject.All)
+                {
+                    if (hero.GetPerkValue(perk))
+                        ledger["k:" + perk.StringId] = 1;
+                }
                 CaptureEquipment(hero.BattleEquipment, 'b', ledger);
                 CaptureEquipment(hero.CivilianEquipment, 'c', ledger);
             }
@@ -110,6 +118,7 @@ namespace BannerlordMP.Game
             // did both and sent the result, so those side effects are undone after the loop.
             var development = hero == null ? null : new DevelopmentCounters(hero);
             var equipmentChanges = new List<KeyValuePair<string, int>>();
+            var perkChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
             {
@@ -159,6 +168,8 @@ namespace BannerlordMP.Game
                         ApplyItem(party.ItemRoster, key.Substring(2), change);
                     else if (key.StartsWith("e:") && hero != null)
                         equipmentChanges.Add(pair);
+                    else if (key.StartsWith("k:") && hero != null)
+                        perkChanges.Add(pair);
                 }
                 catch (Exception e)
                 {
@@ -173,6 +184,19 @@ namespace BannerlordMP.Game
             catch (Exception e)
             {
                 Log.Error("Level and unspent points could not be applied", e);
+            }
+
+            // Perks after skills and level, so a perk arrives with the skill it needs.
+            foreach (var pair in perkChanges)
+            {
+                try
+                {
+                    ApplyPerkChange(hero, pair.Key.Substring(2), pair.Value);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Perk change {pair.Key}{pair.Value:+#;-#;0} failed", e);
+                }
             }
 
             // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
@@ -253,6 +277,20 @@ namespace BannerlordMP.Game
                 return;
             var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
             items.AddToCounts(new EquipmentElement(item, modifier, null, false), change);
+        }
+
+        private static readonly System.Reflection.MethodInfo SetPerkValueInternal = HarmonyLib.AccessTools.Method(typeof(Hero), "SetPerkValueInternal");
+
+        private static void ApplyPerkChange(Hero hero, string id, int change)
+        {
+            var perk = PerkObject.All.FirstOrDefault(p => p.StringId == id);
+            if (perk == null || change == 0)
+                return;
+            var has = hero.GetPerkValue(perk);
+            if (change > 0 && !has)
+                hero.HeroDeveloper.AddPerk(perk);
+            else if (change < 0 && has && SetPerkValueInternal != null)
+                SetPerkValueInternal.Invoke(hero, new object[] { perk, false });
         }
 
         /// <summary>
@@ -589,6 +627,10 @@ namespace BannerlordMP.Game
                 return "that party is busy (battle, town or siege)";
             if (attacker.MemberRoster == null || attacker.MemberRoster.TotalHealthyCount <= 0)
                 return "that party has no troops here";
+            if (attacker.IsGarrison || attacker.IsMilitia)
+                return "a garrison or militia doesn't chase on the map";
+            if (attacker.LeaderHero != null && attacker.LeaderHero.IsPrisoner)
+                return "its leader is a prisoner here";
             if (attacker.MapFaction == null || main.MapFaction == null || !FactionManager.IsAtWarAgainstFaction(attacker.MapFaction, main.MapFaction))
                 return "not at war here";
             if (attacker.Position.ToVec2().DistanceSquared(main.Position.ToVec2()) > 3f * 3f)

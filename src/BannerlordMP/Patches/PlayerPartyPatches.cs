@@ -50,6 +50,9 @@ namespace BannerlordMP.Patches
                 {
                     AccessTools.Method(typeof(FoodConsumptionBehavior), nameof(FoodConsumptionBehavior.DailyTickParty)),
                     AccessTools.Method(typeof(FoodConsumptionBehavior), "PartyConsumeFood"),
+                    // The steps PartyConsumeFood takes, in case the game reaches them another way (its frame tick).
+                    AccessTools.Method(typeof(FoodConsumptionBehavior), "MakeFoodConsumption"),
+                    AccessTools.Method(typeof(FoodConsumptionBehavior), "SlaughterLivestock"),
                     AccessTools.Method(typeof(DesertionCampaignBehavior), "DailyTickParty"),
                 }.Where(method => method != null);
             }
