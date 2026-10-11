@@ -96,6 +96,9 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.31 a clan party made in a town stayed inside that town on the client (snapshots never move parties in a
+  settlement) → `WorldBridge.LeaveSettlementIfMovedAway` takes stand-ins out once the server has them elsewhere;
+  the host enables the new clan party's AI explicitly and logs its state.
 - v0.3.30 a companion's clan party stood still and couldn't join armies: the server refused to create it because
   the companion was hired before v0.3.29 (not in the clan there) → `CreatePlayerClanParty` hires a clanless leader
   first, and the client resends its own clan parties missing from full snapshots (`ResendOwnClanParty`, every 30 s).

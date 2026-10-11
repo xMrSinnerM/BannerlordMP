@@ -668,6 +668,7 @@ namespace BannerlordMP.Session
                     (unknown ?? (unknown = new List<string>())).Add(position.PartyId);
                     continue;
                 }
+                WorldBridge.LeaveSettlementIfMovedAway(party, position.X, position.Y);
                 if (smooth && Config.ClientSmoothPositions)
                 {
                     var current = GameBridge.GetPosition(party);

@@ -465,6 +465,33 @@ namespace BannerlordMP.Game
         }
 
         /// <summary>
+        /// Client: a stand-in that sits inside a settlement here (it was there when the world was saved, or the player
+        /// created it in a town) is never moved by snapshots, because the game positions parties in settlements itself.
+        /// Once the server has it somewhere else, take it out so it follows the server. A new clan party made in a town
+        /// stood still in that town for good, and couldn't reach its army.
+        /// </summary>
+        public static void LeaveSettlementIfMovedAway(MobileParty party, float x, float y)
+        {
+            var settlement = party?.CurrentSettlement;
+            if (settlement == null || party == MobileParty.MainParty || party.IsGarrison || party.IsMilitia || party.MapEvent != null || party.AttachedTo != null)
+                return;
+            if (settlement.Position.ToVec2().DistanceSquared(new Vec2(x, y)) < LeftSettlementDistance * LeftSettlementDistance)
+                return;
+            try
+            {
+                Remote(() => LeaveSettlementAction.ApplyForParty(party));
+                MakePuppet(party);
+                Log.Info($"Client: {party.StringId} left {settlement.StringId} on the server; taking it out here too");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Could not take {party.StringId} out of {settlement.StringId}", e);
+            }
+        }
+
+        private const float LeftSettlementDistance = 1.5f;
+
+        /// <summary>
         /// Host: a player created a party for one of their clan's heroes on their machine (clan screen). The real party
         /// is made here as a lord party of that hero, with the id, position and troops their game gave it, so their
         /// copy becomes its mirror. From then on the host's AI leads it, as single player's AI leads clan parties.
@@ -503,6 +530,12 @@ namespace BannerlordMP.Game
                     var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                     GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
+                    // Led by the host's AI from here, as single player's AI leads clan parties.
+                    party.IgnoreByOtherPartiesTill(CampaignTime.Now);
+                    party.Ai.EnableAi();
+                    party.Ai.SetDoNotMakeNewDecisions(false);
+                    Log.Info($"Created clan party {party.StringId} at ({position.X:0.0}, {position.Y:0.0}): in settlement {party.CurrentSettlement?.StringId ?? "none"}, " +
+                             $"AI disabled {party.Ai.IsDisabled}, behavior {party.DefaultBehavior}, {party.MemberRoster.TotalManCount} men");
                 }
                 catch (Exception e)
                 {
