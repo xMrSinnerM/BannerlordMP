@@ -189,6 +189,20 @@ namespace BannerlordMP.Session
                 return false;
             if (IsBattleFrozen(attacker) || IsBattleFrozen(defender))
                 return false; // Mid-battle on someone's machine.
+            // An AI army with an online player riding in it: that player fights the battle, with the army, on their
+            // machine (their game puts the army they are attached to in the battle). Here it would be fought without them.
+            var riderWithAttacker = OnlinePlayerRidingWith(attacker);
+            var riderWithDefender = OnlinePlayerRidingWith(defender);
+            if (riderWithAttacker != null && !IsRemotePlayerParty(defender))
+            {
+                RequestEncounter(defender, riderWithAttacker);
+                return false;
+            }
+            if (riderWithDefender != null && !IsRemotePlayerParty(attacker))
+            {
+                RequestEncounter(attacker, riderWithDefender);
+                return false;
+            }
             // An AI party caught an online player: that battle is fought on the player's machine.
             if (IsOnlinePlayerParty(defender) && !IsRemotePlayerParty(attacker))
                 RequestEncounter(attacker, defender);
@@ -914,6 +928,17 @@ namespace BannerlordMP.Session
             var leftParty = GameBridge.FindParty(player.PartyId);
             if (leftParty?.Army != null && leftParty.Army.LeaderParty == leftParty)
                 WorldBridge.Remote(() => TaleWorlds.CampaignSystem.Actions.DisbandArmyAction.ApplyByUnknownReason(leftParty.Army));
+            else if (leftParty?.Army != null)
+            {
+                // Riding in someone else's army: their party stays behind, so it leaves that army.
+                var army = leftParty.Army;
+                WorldBridge.Remote(() =>
+                {
+                    leftParty.AttachedTo = null;
+                    leftParty.Army = null;
+                });
+                Log.Info($"{player.Name}'s party left {army.LeaderParty?.StringId}'s army with them");
+            }
             GameBridge.Freeze(leftParty);
             if (_arbiter.RemovePlayer(playerId))
                 BroadcastTimeState();
@@ -955,6 +980,14 @@ namespace BannerlordMP.Session
         {
             return Players.Values.Any(p => p.HeroId == slot.HeroId)
                 || _peers.Any(p => p.Key != exceptPeer && p.Value.SlotId == slot.SlotId && (p.Value.WaitingForSave || p.Value.Sender != null));
+        }
+
+        /// <summary>An online player's party attached to the army that <paramref name="party"/> leads, if any.</summary>
+        public MobileParty OnlinePlayerRidingWith(MobileParty party)
+        {
+            if (party?.Army == null || party.Army.LeaderParty != party || IsRemotePlayerParty(party))
+                return null;
+            return party.AttachedParties?.FirstOrDefault(IsOnlinePlayerParty);
         }
 
         private bool IsRemotePlayerParty(MobileParty party) =>

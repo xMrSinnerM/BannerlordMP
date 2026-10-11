@@ -96,6 +96,11 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.37 the remaining gaps: AI/other players' armies mirrored on clients and joinable (host sends an AI army's
+  field battles to an attached online player, detaches them for settlement encounters, never lets the AI call
+  players); tournaments (29/30); quests (31: host removes the taken issue; `StateSync.TickQuests` runs quest turns
+  on clients); battles with friends (`ClientSession.Allies.cs`, 32: nearby allied player parties join the battle on
+  the fighting player's machine under its AI, losses applied on the host). Protocol 13 still (enum values only).
 - v0.3.36 the owner asked for everything a player does to reach the server. `Game/StateSync.cs` + watchers in
   `ClientSession.State.cs` / `HostSession.State.cs`, `WorldEvent`s 19–28, protocol 13: garrison/dungeon roster changes,
   fief settings (governor, build queue, daily project, wage limit, auto-recruit; host sends levels, loyalty, food...),

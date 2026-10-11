@@ -994,6 +994,16 @@ namespace BannerlordMP.Game
                         case WorldEventKind.Workshop:
                             StateSync.ApplyWorkshop(Find<Settlement>(message.A), message.B);
                             break;
+                        case WorldEventKind.TournamentStarted:
+                            StateSync.StartTournament(Find<Settlement>(message.A)?.Town);
+                            break;
+                        case WorldEventKind.TournamentEnded:
+                            StateSync.EndTournament(Find<Settlement>(message.A)?.Town, GameBridge.FindHero(message.B),
+                                !(Session.MpSession.Current is Session.ClientSession) && Session.MpSession.Current?.IsPlayedHero(GameBridge.FindHero(message.B)) == true);
+                            break;
+                        case WorldEventKind.QuestTaken:
+                            StateSync.TakeIssue(GameBridge.FindHero(message.A), message.B);
+                            break;
                         case WorldEventKind.VillageState:
                             StateSync.ApplyVillageState(Find<Settlement>(message.A), message.B);
                             break;
@@ -1377,11 +1387,12 @@ namespace BannerlordMP.Game
             {
                 case WorldEventKind.ArmyCreated:
                 {
-                    // The client that proposed it made this army itself; only the host has to create it.
+                    // The client that proposed it made this army itself. Other armies (AI lords', other players') are
+                    // mirrored on clients, so a player can see them and join one.
                     var leader = GameBridge.FindHero(message.A);
                     var leaderParty = leader?.PartyBelongedTo;
                     var kingdom = leader?.Clan?.Kingdom;
-                    if (onClient || (leaderParty?.Army != null && leaderParty.LeaderHero == leader))
+                    if ((onClient && leader == Hero.MainHero) || (leaderParty?.Army != null && leaderParty.LeaderHero == leader))
                         break;
                     if (leaderParty == null || leaderParty.LeaderHero != leader || kingdom == null)
                     {
@@ -1407,11 +1418,16 @@ namespace BannerlordMP.Game
                                      (party == null ? "no such party" : !party.IsActive ? "party inactive" : army == null ? "no army" : "not that army's leader"));
                         break;
                     }
-                    if (party.Army != null || (onClient && leaderParty != MobileParty.MainParty))
+                    if (party.Army != null)
                         break;
                     KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
                     if (onClient)
-                        MakePuppet(party);
+                    {
+                        if (party != MobileParty.MainParty)
+                            MakePuppet(party);
+                    }
+                    else if (Session.MpSession.Current?.IsPlayerParty(party) == true)
+                        Log.Info($"Player party {party.StringId} joined {leaderParty.StringId}'s army; its player moves it");
                     else
                     {
                         if (party.MapEvent == null)
@@ -1427,8 +1443,6 @@ namespace BannerlordMP.Game
                     var army = leaderParty?.Army;
                     if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty
                         || party.AttachedTo == leaderParty || party.MapEvent != null)
-                        break;
-                    if (onClient && leaderParty != MobileParty.MainParty)
                         break;
                     if (party.Army != army)
                     {
@@ -1447,12 +1461,10 @@ namespace BannerlordMP.Game
                     // The leader leaving is the army breaking up, which arrives as its own event.
                     if (army == null || army.LeaderParty != leaderParty || party == leaderParty)
                         break;
-                    if (onClient && leaderParty != MobileParty.MainParty)
-                        break;
                     party.Army = null;
                     if (party.AttachedTo != null)
                         party.AttachedTo = null;
-                    if (onClient)
+                    if (onClient && party != MobileParty.MainParty)
                         MakePuppet(party);
                     break;
                 }
@@ -1460,9 +1472,9 @@ namespace BannerlordMP.Game
                 {
                     var leaderParty = GameBridge.FindParty(message.A);
                     var army = leaderParty?.Army;
-                    if (army == null || army.LeaderParty != leaderParty || (onClient && leaderParty != MobileParty.MainParty))
+                    if (army == null || army.LeaderParty != leaderParty)
                         break;
-                    var members = army.Parties.Where(p => p != leaderParty).ToList();
+                    var members = army.Parties.Where(p => p != leaderParty && p != MobileParty.MainParty).ToList();
                     DisbandArmyAction.ApplyByUnknownReason(army);
                     if (onClient)
                         members.ForEach(MakePuppet);

@@ -115,6 +115,7 @@ namespace BannerlordMP.Session
             LogCaptivity();
             ShowPendingVote();
             TickStateWatch(dt);
+            StateSync.TickQuests(GameBridge.NowHours);
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
@@ -182,6 +183,7 @@ namespace BannerlordMP.Session
                 });
             }
             Net.SendToAll(result);
+            ReportAllyLosses();
         }
 
         /// <summary>The market of the settlement we are in, as the host sent it: what our trading is measured against.</summary>
@@ -286,9 +288,19 @@ namespace BannerlordMP.Session
 
         public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
         {
-            // Only our own army, and only what the player did (not what the host told us).
-            if (!_welcomed || WorldBridge.ApplyingRemote || leader != MobileParty.MainParty)
+            // Only what the player did (not what the host told us): our own army, or our party in someone else's.
+            if (!_welcomed || WorldBridge.ApplyingRemote)
                 return;
+            if (leader != MobileParty.MainParty)
+            {
+                if (party == MobileParty.MainParty && (kind == WorldEventKind.ArmyPartyJoined || kind == WorldEventKind.ArmyPartyAttached || kind == WorldEventKind.ArmyPartyLeft))
+                {
+                    var joined = DescribeArmyEvent(kind, leader, party);
+                    Log.Info("Proposing to the host: " + joined);
+                    Net.SendToAll(joined);
+                }
+                return;
+            }
             if (party != MobileParty.MainParty)
                 _repuppet.Add(party);
             switch (kind)

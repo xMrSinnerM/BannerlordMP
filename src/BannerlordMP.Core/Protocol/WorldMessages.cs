@@ -152,6 +152,17 @@ namespace BannerlordMP.Core.Protocol
         /// then its troops as "id:count:wounded" joined by ';', separated by field separators.
         /// </summary>
         CaravanCreated = 28,
+        /// <summary>A = town where a tournament was announced.</summary>
+        TournamentStarted = 29,
+        /// <summary>A = town whose tournament is over, B = the winner hero (empty: an AI troop won, or it was cancelled).</summary>
+        TournamentEnded = 30,
+        /// <summary>A = the hero who gave a player a quest (their issue is taken), B = the quest's title (for the log).</summary>
+        QuestTaken = 31,
+        /// <summary>
+        /// A = another player's party that fought on the proposer's side in the proposer's battle, B = its troop
+        /// changes there as "id:countChange:woundedChange" joined by ';'.
+        /// </summary>
+        AllyBattleLosses = 32,
     }
 
     /// <summary>

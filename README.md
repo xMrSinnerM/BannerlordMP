@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.36, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.37, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -135,6 +135,10 @@ happens.
 | Relations and marriages | Relation changes involving you or your clan, and marriages, reach the server |
 | Raided villages | A village you loot is looted on the server; villages looted or recovering on the server are shown to everyone |
 | Workshops and caravans | Buying, selling or changing a workshop reaches the server; a caravan you send out is created on the server, which runs it |
+| Other armies | AI lords' and other players' armies are shown on your map. Join one by talking to its leader, as in single player; you travel with it, and its field battles are fought on your screen with the army beside you |
+| Tournaments | Tournaments announced on the server appear in your towns; one you play (and win) is over for everyone, and your win counts on the leaderboard |
+| Quests | Quests run in your game, with their time limits and companions sent to solve them; the issue you took is removed on the server. Rewards (gold, items, renown, relations) reach the server like everything else |
+| Battles with friends | When your battle starts, other players' parties right next to you that are at war with your enemy join it on your side; your game's AI leads their troops, and their losses are taken from their party on the server and on their machine |
 | Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations
@@ -144,14 +148,15 @@ happens.
 - **Not shared yet:**
   - two players trading in the same town at the same time each see the market as it was when they entered
     (both trades still count on the server)
-  - tournaments
   - siege progress details (siege engines, bombardment) beyond the siege itself
   - raids in progress (a village you burn is shared once it is looted, not while you raid it)
-  - quests
+  - quests in progress: a quest lives in your game only, so it is gone after you leave and rejoin (the server
+    removes the issue you took, so nobody else gets it)
   - income from workshops and caravans is worked out by your game from what it knows; whether it matches single
     player hasn't been checked yet
-  - joining another lord's or another player's army
-  - joint battles (players can't fight in the same battle or attack each other)
+  - an AI army entering, raiding or assaulting a town or castle does it without you (you stay in the army)
+  - joint battles are played by one player: a friend's troops fight under the AI on that player's screen, the
+    friend doesn't control anything in it. Players can't attack each other
 - **Mirrored parties are stand-ins.** A party the server spawns after you joined appears with the right
   name, clan, troops and position, but as a generic party (its map icon may look different).
 - **Heroes in battle results:** deaths, captures and releases are shared, including your own hero being

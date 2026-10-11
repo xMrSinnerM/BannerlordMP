@@ -105,10 +105,41 @@ namespace BannerlordMP.Patches
 
             private static bool Prefix(MobileParty attackerParty, Settlement settlement)
             {
+                if (attackerParty != null && attackerParty != MobileParty.MainParty && !IsPlayerParty(attackerParty))
+                {
+                    // An AI army with a player riding in it enters, raids or assaults: the player isn't taken along
+                    // here (their game decides). They stay in the army and catch up with it afterwards.
+                    if (MpSession.Current is HostSession host)
+                    {
+                        MobileParty rider;
+                        while ((rider = host.OnlinePlayerRidingWith(attackerParty)) != null)
+                        {
+                            rider.AttachedTo = null;
+                            Log.Info($"Detached player party {rider.StringId} from {attackerParty.StringId}'s army before it went into {settlement?.StringId}");
+                        }
+                    }
+                    return true;
+                }
                 if (attackerParty == MobileParty.MainParty || !IsPlayerParty(attackerParty))
                     return true;
                 if (Reported.Add(attackerParty.StringId + ">" + settlement?.StringId))
                     Log.Info($"Kept player party {attackerParty.StringId} from entering or assaulting {settlement?.StringId} on the host (their own game does that)");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The host's AI lords call parties into their armies; a player's party only joins an army when its player
+        /// does it (the change arrives from their game).
+        /// </summary>
+        [HarmonyPatch(typeof(MobileParty), nameof(MobileParty.Army), MethodType.Setter)]
+        internal static class NoArmyCallsForPlayers
+        {
+            private static bool Prefix(MobileParty __instance, Army value)
+            {
+                if (value == null || value.LeaderParty == __instance || Game.WorldBridge.ApplyingRemote || !(MpSession.Current is HostSession) || !IsPlayerParty(__instance))
+                    return true;
+                Log.Info($"Kept the AI from calling player party {__instance.StringId} into {value.LeaderParty?.StringId}'s army");
                 return false;
             }
         }

@@ -43,11 +43,10 @@ namespace BannerlordMP.Session
 
         public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
         {
-            // Only joined players' own armies are mirrored; every other army is just parties the snapshots move.
-            if (leader == MobileParty.MainParty || !IsPlayerParty(leader))
-                return;
+            // Every army is mirrored: players see AI lords' armies and can join them.
             var message = DescribeArmyEvent(kind, leader, party);
-            Log.Info("Player army changed on the host, relaying: " + message);
+            if (IsPlayerParty(leader) || IsPlayerParty(party))
+                Log.Info("Player army changed on the host, relaying: " + message);
             SendToPlayers(message);
         }
 
@@ -125,6 +124,11 @@ namespace BannerlordMP.Session
                 case WorldEventMessage proposal:
                     if (!MayChangeHero(playerId, proposal) || !MayChangeState(playerId, proposal))
                         return true;
+                    if (proposal.Kind == WorldEventKind.AllyBattleLosses)
+                    {
+                        ApplyAllyLosses(playerId, proposal);
+                        return true;
+                    }
                     if (proposal.Kind == WorldEventKind.CaravanCreated)
                     {
                         string problem = null;

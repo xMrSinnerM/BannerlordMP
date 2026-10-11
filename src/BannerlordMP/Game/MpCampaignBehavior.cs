@@ -38,6 +38,19 @@ namespace BannerlordMP.Game
                 World(WorldEventKind.Workshop, workshop?.Settlement?.StringId, StateSync.DescribeWorkshop(workshop)));
             CampaignEvents.WorkshopTypeChangedEvent.AddNonSerializedListener(this, workshop =>
                 World(WorldEventKind.Workshop, workshop?.Settlement?.StringId, StateSync.DescribeWorkshop(workshop)));
+            CampaignEvents.TournamentStarted.AddNonSerializedListener(this, town =>
+                World(WorldEventKind.TournamentStarted, town?.Settlement?.StringId, string.Empty));
+            CampaignEvents.TournamentFinished.AddNonSerializedListener(this, (winner, participants, town, prize) =>
+                World(WorldEventKind.TournamentEnded, town?.Settlement?.StringId, winner?.HeroObject?.StringId ?? string.Empty));
+            CampaignEvents.TournamentCancelled.AddNonSerializedListener(this, town =>
+                World(WorldEventKind.TournamentEnded, town?.Settlement?.StringId, string.Empty));
+            CampaignEvents.OnQuestStartedEvent.AddNonSerializedListener(this, quest =>
+                World(WorldEventKind.QuestTaken, quest?.QuestGiver?.StringId, quest?.Title?.ToString()));
+            CampaignEvents.MapEventStarted.AddNonSerializedListener(this, (mapEvent, attacker, defender) =>
+            {
+                if (mapEvent != null)
+                    Forward(s => s.OnLocalMapEventStarted(mapEvent));
+            });
             CampaignEvents.HeroRelationChanged.AddNonSerializedListener(this, (hero, other, change, notify, detail, originalHero, originalOther) =>
             {
                 if (hero != null && other != null && !WorldBridge.ApplyingRemote)

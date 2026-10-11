@@ -55,6 +55,7 @@ namespace BannerlordMP.Session
                 _marriages.Clear();
 
                 WatchSettlementRosters();
+                KeepRidingInArmy();
                 var clan = Clan.PlayerClan;
                 if (clan == null)
                     return;
@@ -121,6 +122,22 @@ namespace BannerlordMP.Session
             }
             foreach (var key in _knownState.Keys.Where(k => k.StartsWith("h:") && !withUs.Contains(k)).ToList())
                 _knownState.Remove(key);
+        }
+
+        private double _armyRideSent;
+
+        /// <summary>
+        /// Riding in an AI lord's army: the server lets go of our party when that army enters a town or castle (our game
+        /// decides about it). Telling it now and then that we are still with the army puts us back.
+        /// </summary>
+        private void KeepRidingInArmy()
+        {
+            var main = MobileParty.MainParty;
+            var leader = main?.Army?.LeaderParty;
+            if (leader == null || leader == main || main.AttachedTo != leader || RealSeconds - _armyRideSent < 30)
+                return;
+            _armyRideSent = RealSeconds;
+            Net.SendToAll(DescribeArmyEvent(WorldEventKind.ArmyPartyAttached, leader, main));
         }
 
         private void SendCaravan(MobileParty caravan)

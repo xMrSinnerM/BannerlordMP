@@ -65,6 +65,19 @@ namespace BannerlordMP.Session
                         problem = "not their workshop";
                     break;
                 }
+                case WorldEventKind.ArmyPartyJoined:
+                case WorldEventKind.ArmyPartyAttached:
+                case WorldEventKind.ArmyPartyLeft:
+                {
+                    // Their party joining or leaving any army, or any party joining or leaving their own army.
+                    var own = Players[playerId].PartyId;
+                    var party = GameBridge.FindParty(proposal.A);
+                    if (proposal.A != own && proposal.B != own)
+                        problem = "not their party or army";
+                    else if (proposal.A == own && proposal.Kind != WorldEventKind.ArmyPartyLeft && party?.MapFaction != GameBridge.FindParty(proposal.B)?.MapFaction)
+                        problem = "not their faction's army";
+                    break;
+                }
                 case WorldEventKind.Relation:
                 case WorldEventKind.Married:
                 {
@@ -85,6 +98,35 @@ namespace BannerlordMP.Session
         }
 
         public override void OnLocalMarriage(Hero hero, Hero other) => _marriages.Add((hero, other));
+
+        /// <summary>
+        /// Another player's party fought beside this player in their battle: take its losses from it here. Its owner's
+        /// game gets the new troop counts with its next party update, and a note saying why.
+        /// </summary>
+        private void ApplyAllyLosses(int playerId, WorldEventMessage proposal)
+        {
+            var ally = GameBridge.FindParty(proposal.A);
+            var own = PlayerParty(playerId);
+            var owner = Players.Values.FirstOrDefault(p => p.PartyId == proposal.A);
+            if (ally == null || own == null || owner == null || owner.Id == playerId
+                || ally.Position.ToVec2().DistanceSquared(own.Position.ToVec2()) > 10f * 10f)
+            {
+                Log.Info($"Ignoring {NameOf(playerId)}'s ally losses for {proposal.A}: not another player's party close to them");
+                return;
+            }
+            var before = ally.MemberRoster.TotalManCount;
+            WorldBridge.Remote(() => StateSync.ApplyRosterChange(ally.MemberRoster, proposal.B));
+            var lost = before - ally.MemberRoster.TotalManCount;
+            Log.Info($"{owner.Name}'s party fought in {NameOf(playerId)}'s battle: {proposal.B} ({lost} fewer men)");
+            var note = $"Your troops fought beside {NameOf(playerId)}" + (lost > 0 ? $" and lost {lost} men." : ".");
+            if (owner.Id == HostPlayerId)
+            {
+                Log.Notify(note);
+                return;
+            }
+            foreach (var pair in _peers.Where(p => p.Value.PlayerId == owner.Id))
+                Net.Send(pair.Key, new ChatMessage { PlayerId = HostPlayerId, Text = note });
+        }
 
         private void TickStateRelay(float dt)
         {

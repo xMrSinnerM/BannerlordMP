@@ -9,6 +9,7 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Settlements.Workshops;
 using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.CampaignSystem.TournamentGames;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.ObjectSystem;
 
@@ -95,6 +96,26 @@ namespace BannerlordMP.Game
 
         public static string DescribeRosterChange(string which, string change) => Join(which, change);
 
+        /// <summary>Applies <see cref="RosterChange"/> text to a roster, never below zero.</summary>
+        public static void ApplyRosterChange(TroopRoster roster, string change)
+        {
+            if (roster == null)
+                return;
+            foreach (var pair in ParseRoster(change))
+            {
+                var character = MBObjectManager.Instance.GetObject<CharacterObject>(pair.Key);
+                if (character == null || character.IsHero)
+                    continue;
+                var index = roster.FindIndexOfTroop(character);
+                var have = index >= 0 ? roster.GetElementNumber(index) : 0;
+                var haveWounded = index >= 0 ? roster.GetElementWoundedNumber(index) : 0;
+                var count = Math.Max(-have, pair.Value.Count);
+                var wounded = Math.Max(-haveWounded, Math.Min(pair.Value.Wounded, have + count - haveWounded));
+                if (count != 0 || wounded != 0)
+                    roster.AddToCounts(character, count, false, wounded, 0, true, -1);
+            }
+        }
+
         public static void ApplySettlementRosterChange(Settlement settlement, string description)
         {
             var fields = Fields(description, 2);
@@ -109,20 +130,7 @@ namespace BannerlordMP.Game
             var roster = Roster(settlement, which);
             if (roster == null)
                 return;
-            foreach (var change in changes)
-            {
-                var character = MBObjectManager.Instance.GetObject<CharacterObject>(change.Key);
-                if (character == null || character.IsHero)
-                    continue;
-                // Never below zero: the server may already have lost some of them.
-                var index = roster.FindIndexOfTroop(character);
-                var have = index >= 0 ? roster.GetElementNumber(index) : 0;
-                var haveWounded = index >= 0 ? roster.GetElementWoundedNumber(index) : 0;
-                var count = Math.Max(-have, change.Value.Count);
-                var wounded = Math.Max(-haveWounded, Math.Min(change.Value.Wounded, have + count - haveWounded));
-                if (count != 0 || wounded != 0)
-                    roster.AddToCounts(character, count, false, wounded, 0, true, -1);
-            }
+            ApplyRosterChange(roster, fields[1]);
             Log.Info($"{(which == Garrison ? "Garrison" : "Dungeon")} of {settlement.StringId} changed by its owner's side ({fields[1]}); now {roster.TotalManCount} men");
         }
 
@@ -359,6 +367,112 @@ namespace BannerlordMP.Game
                 GameBridge.ApplyRoster(caravan.MemberRoster, troops);
             Log.Info($"Created caravan {partyId} for {owner.StringId} from {home.StringId}, led by {leader?.StringId ?? "a caravan master"}, {caravan.MemberRoster.TotalManCount} men");
             return null;
+        }
+
+        // ----- Tournaments ------------------------------------------------------------------------------------
+
+        public static void StartTournament(Town town)
+        {
+            var manager = Campaign.Current?.TournamentManager;
+            if (town == null || manager == null || manager.GetTournamentGame(town) != null)
+                return;
+            manager.AddTournament(new FightTournamentGame(town));
+        }
+
+        private static readonly System.Reflection.FieldInfo Leaderboard =
+            HarmonyLib.AccessTools.Field(typeof(TournamentManager), "_worldWideTournamentLeaderboard");
+
+        /// <summary>
+        /// A tournament is over: it is taken off the town (otherwise a player could win the same one again, or the AI
+        /// would hold it once more). A player who won it gets the win on the leaderboard; prize, renown and influence
+        /// travel through their own ledger.
+        /// </summary>
+        public static void EndTournament(Town town, Hero winner, bool countWin)
+        {
+            var manager = Campaign.Current?.TournamentManager as TournamentManager;
+            var game = town == null ? null : Campaign.Current?.TournamentManager?.GetTournamentGame(town);
+            if (game == null)
+                return;
+            if (manager == null)
+                return;
+            manager.RemoveTournament(game);
+            if (countWin && winner != null && manager != null && Leaderboard?.GetValue(manager) is Dictionary<Hero, int> board)
+            {
+                board.TryGetValue(winner, out var wins);
+                board[winner] = wins + 1;
+            }
+            Log.Info($"Tournament in {town.Settlement.StringId} is over{(winner != null ? ", won by " + winner.StringId : string.Empty)}");
+        }
+
+        // ----- Quests -----------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A player took this hero's issue as a quest in their game. Here the issue is taken off the hero, so nobody
+        /// else is offered it and the AI doesn't solve it meanwhile. The quest itself runs in the player's game.
+        /// </summary>
+        public static void TakeIssue(Hero giver, string title)
+        {
+            var manager = Campaign.Current?.IssueManager;
+            if (giver == null || manager == null || !manager.Issues.TryGetValue(giver, out var issue) || issue == null || issue.IssueQuest != null)
+                return;
+            manager.DeactivateIssue(issue);
+            Log.Info($"{giver.StringId}'s issue was taken by a player as a quest ({title}); removed it here");
+        }
+
+        private static readonly int[] QuestTick = { -1, -1, -1 };
+
+        /// <summary>
+        /// Client: quests run in the player's game, but its hourly and daily turns are off. Quests' own turns (time
+        /// limits, alternative solutions sent with a companion) are given here, as single player gives them.
+        /// </summary>
+        public static void TickQuests(double hours)
+        {
+            var campaign = Campaign.Current;
+            if (campaign?.QuestManager == null)
+                return;
+            var hour = (int)Math.Floor(hours);
+            if (QuestTick[0] < 0)
+            {
+                QuestTick[0] = hour;
+                QuestTick[1] = hour / 24;
+                QuestTick[2] = hour / (24 * 7);
+                return;
+            }
+            // A big jump (a skipped catch-up) gives one turn, not one per missed hour.
+            if (hour != QuestTick[0])
+            {
+                QuestTick[0] = hour;
+                Safely("hourly", () =>
+                {
+                    campaign.QuestManager.HourlyTick();
+                    campaign.IssueManager?.HourlyTick();
+                });
+            }
+            if (hour / 24 != QuestTick[1])
+            {
+                QuestTick[1] = hour / 24;
+                Safely("daily", () => campaign.QuestManager.DailyTick());
+            }
+            if (hour / (24 * 7) != QuestTick[2])
+            {
+                QuestTick[2] = hour / (24 * 7);
+                Safely("weekly", () => campaign.QuestManager.WeeklyTick());
+            }
+        }
+
+        private static readonly HashSet<string> QuestTickFailed = new HashSet<string>();
+
+        private static void Safely(string what, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception e)
+            {
+                if (QuestTickFailed.Add(what))
+                    Log.Error($"Quests' {what} turn failed", e);
+            }
         }
 
         // ----- Relations, marriages, villages -----------------------------------------------------------------

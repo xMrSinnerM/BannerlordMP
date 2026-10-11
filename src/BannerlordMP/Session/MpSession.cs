@@ -138,6 +138,11 @@ namespace BannerlordMP.Session
         {
         }
 
+        /// <summary>A battle (or raid, or siege assault) started in the local campaign.</summary>
+        public virtual void OnLocalMapEventStarted(MapEvent mapEvent)
+        {
+        }
+
         /// <summary>Two heroes' relation changed in the local campaign.</summary>
         public virtual void OnLocalRelationChanged(TaleWorlds.CampaignSystem.Hero hero, TaleWorlds.CampaignSystem.Hero other)
         {
