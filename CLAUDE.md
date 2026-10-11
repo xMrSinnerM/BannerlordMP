@@ -32,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 13) and tell the owner to update both PCs.
+   (currently 14) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -96,6 +96,11 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.40 "food disappears right after I buy it" (log): game days passed every ~20 s and the client, browsing a town
+  (time stands still there in single player), fell 6 h behind every few seconds; the server fed the party for all of
+  it → `PlayerActivity.Resting` (4, protocol 14) for a non-wait town/castle/village menu or a screen opened there;
+  the host counts a resting player's party as away (no food, no desertion) and the client charges no wages for hours
+  skipped while resting. FiefState relays are no longer logged on clients.
 - v0.3.39 gear given to a new wife (and her pregnancy) were gone after a rejoin: she joined the player's party before
   the marriage reached the server, so the server refused that move (not their clan yet) and then refused her gear
   changes ("not in their party here"), losing the items → the client resends the spouse's party move after the

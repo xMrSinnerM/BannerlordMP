@@ -663,9 +663,12 @@ namespace BannerlordMP.Session
                 return; // Not behind, or the clock could not be moved: the normal fast-forward handles it.
 
             _smoother.Clear();
-            if (returned)
+            // Hours the world spent while we were in a battle, or browsing a town (time stands still there in single
+            // player), cost no wages; the server doesn't feed our party for them either.
+            var free = returned || _activity == PlayerActivity.Resting;
+            if (free)
                 _financeDay = (int)Math.Floor(GameBridge.NowHours / 24);
-            Log.Info($"Client: skipped {behind:0.00} hours to the world's time{(returned ? " (no upkeep, back from a battle)" : "")}");
+            Log.Info($"Client: skipped {behind:0.00} hours to the world's time{(returned ? " (no upkeep, back from a battle)" : free ? " (no upkeep, in a town)" : "")}");
             Log.Notify(behind >= 1 ? $"Skipped {behind:0} hours to rejoin the world." : "Rejoined the world.");
         }
 

@@ -19,6 +19,12 @@ namespace BannerlordMP.Core.Time
         Conversation = 2,
         /// <summary>In a 3D mission (field battle, siege, town/tavern scene...). Runs separately from the world.</summary>
         Mission = 3,
+        /// <summary>
+        /// In a town, castle or village menu that isn't a wait menu, or a screen opened there (trade, party, inventory).
+        /// No time passes for them, as in single player, so their party has no upkeep meanwhile. Still follows the
+        /// shared clock.
+        /// </summary>
+        Resting = 4,
     }
 
     public enum TimeArbitrationMode : byte

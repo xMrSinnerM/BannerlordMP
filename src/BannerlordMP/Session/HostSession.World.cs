@@ -363,8 +363,9 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>
-        /// A player hero's party whose player is not on the map right now: in a battle or conversation, or
-        /// offline. Its food and morale wait for them (a battle takes no time in single player).
+        /// A player hero's party whose player is not on the map right now: in a battle or conversation, browsing a
+        /// town, or offline. Its food and morale wait for them (a battle takes no time in single player, and neither
+        /// does trading in a town: food the player had just bought was eaten while they were still in the market).
         /// </summary>
         public override bool IsPlayedHero(Hero hero) => base.IsPlayedHero(hero) || IsPlayerHero(hero);
 
@@ -373,7 +374,7 @@ namespace BannerlordMP.Session
             if (party?.LeaderHero == null || !IsPlayerHero(party.LeaderHero))
                 return false;
             var player = Players.Values.FirstOrDefault(p => p.PartyId == party.StringId);
-            return player == null || _arbiter.IsDetached(player.Id);
+            return player == null || _arbiter.IsDetached(player.Id) || _arbiter.GetActivity(player.Id) == BannerlordMP.Core.Time.PlayerActivity.Resting;
         }
 
         private void RememberPlayerGold(Hero hero)

@@ -171,11 +171,23 @@ namespace BannerlordMP.Game
             {
                 if (mapState.MapConversationActive)
                     return PlayerActivity.Conversation;
-                return mapState.AtMenu ? PlayerActivity.Menu : PlayerActivity.Map;
+                return mapState.AtMenu ? MenuActivity() : PlayerActivity.Map;
             }
 
             // Inventory, party screen, encyclopedia, etc. are game states pushed on top of the map.
-            return PlayerActivity.Menu;
+            return MenuActivity();
+        }
+
+        /// <summary>
+        /// Browsing a town, castle or village (its menus, the market, the party screen there) stops time in single
+        /// player; only its wait menus let time pass. The shared world keeps going meanwhile, and its hours must
+        /// not cost the player food and wages they would never have paid on their own.
+        /// </summary>
+        private static PlayerActivity MenuActivity()
+        {
+            var inSettlement = MobileParty.MainParty?.CurrentSettlement != null;
+            var waiting = Campaign.Current?.CurrentMenuContext?.GameMenu?.IsWaitMenu == true;
+            return inSettlement && !waiting ? PlayerActivity.Resting : PlayerActivity.Menu;
         }
 
         public static bool IsOnMapWithoutMenu()

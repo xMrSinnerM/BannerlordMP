@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.39, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.40, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -21,6 +21,9 @@ hero and party; the host's game runs the world.
   takes no time, your party eats no food, pays no wages and loses no troops to low morale for the time
   you spent in the battle. (`SkipTimeAfterBattles=false` in `config.ini` fast-forwards through it instead,
   16× by default.) A player who is offline doesn't use up food either.
+- **Browsing a town is free of upkeep.** In single player time stands still while you're in a town, castle or
+  village menu, trading or managing your party there. The shared world keeps going, but your party eats no
+  food and pays no wages meanwhile. Waiting in a town (its wait menu) costs upkeep as usual.
 - **The host is special.** The host's machine simulates the world, so while the **host** is in a battle
   the world pauses for everyone. To avoid that, run a **dedicated host**: a separate game instance (on
   another PC, or a second instance on yours) started with `mp.server`. Nobody plays on it, so it

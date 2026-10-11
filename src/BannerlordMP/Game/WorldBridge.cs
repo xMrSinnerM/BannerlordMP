@@ -815,7 +815,7 @@ namespace BannerlordMP.Game
 
         public static void ApplyWorldEvent(WorldEventMessage message)
         {
-            if (message.Kind != WorldEventKind.HeroState) // Healing alone sends one every few seconds.
+            if (message.Kind != WorldEventKind.HeroState && message.Kind != WorldEventKind.FiefState) // Healing, food and loyalty change every few seconds.
                 Log.Info("World event applied: " + message);
             Remote(() =>
             {
