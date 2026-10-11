@@ -138,6 +138,21 @@ namespace BannerlordMP.Session
         {
         }
 
+        /// <summary>A battle (or raid, or siege assault) started in the local campaign.</summary>
+        public virtual void OnLocalMapEventStarted(MapEvent mapEvent)
+        {
+        }
+
+        /// <summary>Two heroes' relation changed in the local campaign.</summary>
+        public virtual void OnLocalRelationChanged(TaleWorlds.CampaignSystem.Hero hero, TaleWorlds.CampaignSystem.Hero other)
+        {
+        }
+
+        /// <summary>Two heroes are about to marry in the local campaign (the game raises this before the marriage).</summary>
+        public virtual void OnLocalMarriage(TaleWorlds.CampaignSystem.Hero hero, TaleWorlds.CampaignSystem.Hero other)
+        {
+        }
+
         /// <summary>An army changed in the local campaign: created, a party called, attached or gone, or broken up.</summary>
         public virtual void OnLocalArmyEvent(Core.Protocol.WorldEventKind kind, MobileParty leader, MobileParty party)
         {

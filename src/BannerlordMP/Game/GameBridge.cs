@@ -171,11 +171,23 @@ namespace BannerlordMP.Game
             {
                 if (mapState.MapConversationActive)
                     return PlayerActivity.Conversation;
-                return mapState.AtMenu ? PlayerActivity.Menu : PlayerActivity.Map;
+                return mapState.AtMenu ? MenuActivity() : PlayerActivity.Map;
             }
 
             // Inventory, party screen, encyclopedia, etc. are game states pushed on top of the map.
-            return PlayerActivity.Menu;
+            return MenuActivity();
+        }
+
+        /// <summary>
+        /// Browsing a town, castle or village (its menus, the market, the party screen there) stops time in single
+        /// player; only its wait menus let time pass. The shared world keeps going meanwhile, and its hours must
+        /// not cost the player food and wages they would never have paid on their own.
+        /// </summary>
+        private static PlayerActivity MenuActivity()
+        {
+            var inSettlement = MobileParty.MainParty?.CurrentSettlement != null;
+            var waiting = Campaign.Current?.CurrentMenuContext?.GameMenu?.IsWaitMenu == true;
+            return inSettlement && !waiting ? PlayerActivity.Resting : PlayerActivity.Menu;
         }
 
         public static bool IsOnMapWithoutMenu()
@@ -572,6 +584,27 @@ namespace BannerlordMP.Game
             var change = Campaign.Current.Models.ClanFinanceModel.CalculateClanGoldChange(clan, false, true, false).RoundedResultNumber;
             leader.Gold = Math.Max(0, leader.Gold + change);
             return change;
+        }
+
+        /// <summary>Client: what today's clan finances are made of, for the log.</summary>
+        public static string DescribeClanFinances()
+        {
+            var clan = Clan.PlayerClan;
+            if (clan == null)
+                return "no clan";
+            var lines = Campaign.Current.Models.ClanFinanceModel.CalculateClanGoldChange(clan, true, false, true).GetLines();
+            return lines == null || lines.Count == 0 ? "nothing" : string.Join(", ", lines.Select(l => $"{l.Item1} {l.Item2:+0;-0;0}"));
+        }
+
+        /// <summary>Client: food, eaters and clan parties, for the daily log line.</summary>
+        public static string DescribeOwnSupplies()
+        {
+            var main = MobileParty.MainParty;
+            if (main == null)
+                return "no party";
+            var clanParties = Clan.PlayerClan?.WarPartyComponents?.Count ?? 0;
+            return $"{main.TotalFoodAtInventory} food, uses {-main.FoodChange:0.0} a day, {main.MemberRoster.TotalManCount} men, "
+                   + $"{main.PrisonRoster.TotalManCount} prisoners, {Hero.MainHero?.Gold} gold, {clanParties} clan war parties";
         }
 
         public static bool AtMainMenu => GameStateManager.Current?.ActiveState is InitialState;

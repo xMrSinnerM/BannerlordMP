@@ -20,7 +20,51 @@ namespace BannerlordMP.Game
             CampaignEvents.WarDeclared.AddNonSerializedListener(this, (a, b, detail) => World(WorldEventKind.War, a?.StringId, b?.StringId));
             CampaignEvents.MakePeace.AddNonSerializedListener(this, (a, b, detail) => World(WorldEventKind.Peace, a?.StringId, b?.StringId));
             CampaignEvents.OnClanChangedKingdomEvent.AddNonSerializedListener(this, (clan, oldKingdom, newKingdom, detail, notify) =>
-                World(WorldEventKind.ClanKingdom, clan?.StringId, newKingdom?.StringId ?? string.Empty));
+            {
+                // A kingdom a player founds exists only in their game until the server makes it too.
+                if (detail == TaleWorlds.CampaignSystem.Actions.ChangeKingdomAction.ChangeKingdomActionDetail.CreateKingdom && newKingdom != null)
+                    World(WorldEventKind.KingdomCreated, clan?.StringId, WorldBridge.DescribeKingdom(newKingdom));
+                var joined = newKingdom?.StringId ?? string.Empty;
+                if (newKingdom != null && detail == TaleWorlds.CampaignSystem.Actions.ChangeKingdomAction.ChangeKingdomActionDetail.JoinAsMercenary)
+                    joined += $"{WorldEventMessage.FieldSeparator}m{WorldEventMessage.FieldSeparator}{clan?.MercenaryAwardMultiplier ?? 0}";
+                World(WorldEventKind.ClanKingdom, clan?.StringId, joined);
+            });
+            CampaignEvents.VillageStateChanged.AddNonSerializedListener(this, (village, oldState, newState, raider) =>
+            {
+                if (StateSync.IsSharedVillageState(newState))
+                    World(WorldEventKind.VillageState, village?.Settlement?.StringId, StateSync.DescribeVillageState(newState, raider));
+            });
+            CampaignEvents.WorkshopOwnerChangedEvent.AddNonSerializedListener(this, (workshop, oldOwner) =>
+                World(WorldEventKind.Workshop, workshop?.Settlement?.StringId, StateSync.DescribeWorkshop(workshop)));
+            CampaignEvents.WorkshopTypeChangedEvent.AddNonSerializedListener(this, workshop =>
+                World(WorldEventKind.Workshop, workshop?.Settlement?.StringId, StateSync.DescribeWorkshop(workshop)));
+            CampaignEvents.TournamentStarted.AddNonSerializedListener(this, town =>
+                World(WorldEventKind.TournamentStarted, town?.Settlement?.StringId, string.Empty));
+            CampaignEvents.TournamentFinished.AddNonSerializedListener(this, (winner, participants, town, prize) =>
+                World(WorldEventKind.TournamentEnded, town?.Settlement?.StringId, winner?.HeroObject?.StringId ?? string.Empty));
+            CampaignEvents.TournamentCancelled.AddNonSerializedListener(this, town =>
+                World(WorldEventKind.TournamentEnded, town?.Settlement?.StringId, string.Empty));
+            CampaignEvents.OnQuestStartedEvent.AddNonSerializedListener(this, quest =>
+                World(WorldEventKind.QuestTaken, quest?.QuestGiver?.StringId, quest?.Title?.ToString()));
+            CampaignEvents.OnChildConceivedEvent.AddNonSerializedListener(this, mother =>
+                World(WorldEventKind.Pregnant, mother?.StringId, string.Empty));
+            CampaignEvents.OnGivenBirthEvent.AddNonSerializedListener(this, (mother, children, stillborn) =>
+                World(WorldEventKind.GaveBirth, mother?.StringId, (children?.Count ?? 0).ToString()));
+            CampaignEvents.MapEventStarted.AddNonSerializedListener(this, (mapEvent, attacker, defender) =>
+            {
+                if (mapEvent != null)
+                    Forward(s => s.OnLocalMapEventStarted(mapEvent));
+            });
+            CampaignEvents.HeroRelationChanged.AddNonSerializedListener(this, (hero, other, change, notify, detail, originalHero, originalOther) =>
+            {
+                if (hero != null && other != null && !WorldBridge.ApplyingRemote)
+                    Forward(s => s.OnLocalRelationChanged(hero, other));
+            });
+            CampaignEvents.BeforeHeroesMarried.AddNonSerializedListener(this, (hero, other, notify) =>
+            {
+                if (hero != null && other != null && !WorldBridge.ApplyingRemote)
+                    Forward(s => s.OnLocalMarriage(hero, other));
+            });
             CampaignEvents.OnSiegeEventStartedEvent.AddNonSerializedListener(this, siege =>
                 World(WorldEventKind.SiegeStarted, siege?.BesiegedSettlement?.StringId, siege?.BesiegerCamp?.LeaderParty?.StringId));
             CampaignEvents.OnSiegeEventEndedEvent.AddNonSerializedListener(this, siege =>
@@ -75,7 +119,7 @@ namespace BannerlordMP.Game
 
         private static void World(WorldEventKind kind, string a, string b)
         {
-            if (string.IsNullOrEmpty(a))
+            if (string.IsNullOrEmpty(a) || WorldBridge.Founding)
                 return;
             Forward(s => s.OnLocalWorldEvent(kind, a, b ?? string.Empty));
         }

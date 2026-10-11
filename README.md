@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.29, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.40, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -21,6 +21,9 @@ hero and party; the host's game runs the world.
   takes no time, your party eats no food, pays no wages and loses no troops to low morale for the time
   you spent in the battle. (`SkipTimeAfterBattles=false` in `config.ini` fast-forwards through it instead,
   16× by default.) A player who is offline doesn't use up food either.
+- **Browsing a town is free of upkeep.** In single player time stands still while you're in a town, castle or
+  village menu, trading or managing your party there. The shared world keeps going, but your party eats no
+  food and pays no wages meanwhile. Waiting in a town (its wait menu) costs upkeep as usual.
 - **The host is special.** The host's machine simulates the world, so while the **host** is in a battle
   the world pauses for everyone. To avoid that, run a **dedicated host**: a separate game instance (on
   another PC, or a second instance on yours) started with `mp.server`. Nobody plays on it, so it
@@ -113,7 +116,7 @@ happens.
 | Every party's position | Smoothed between updates |
 | Parties appearing and disappearing | Bandits, caravans, lords, new player heroes... mirrored on every machine |
 | Troops of parties near you | Kept accurate, so the army you attack is the real one |
-| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
+| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, kingdoms players found, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
 | Town and village markets | When you enter, your game gets the server's real stock, gold, prosperity and prices; when you leave, what you bought and sold goes back to the server, so the next player finds the market as you left it |
 | Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, level, skill xp, attribute and focus points (spent and unspent), clan renown and influence, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |
@@ -126,6 +129,20 @@ happens.
 | Your party | Only you manage it. On the server, the AI doesn't upgrade your troops, buy or sell for you, recruit, or make troops desert because of a lord's wage limit. Desertion from low morale or an oversized party still happens, as in single player |
 | Clan parties you create | A party you make for a clan member (clan screen) is created on the server too; the server's AI leads it, as single player's AI leads your clan parties, and everyone sees it move. Its troops are kept accurate on your machine wherever it is |
 | Your armies | An army you make is made on the server too. The parties you call travel to you there, and once they reach you they join your army on your machine and move with you. Cohesion is worked out by your game, as in single player; leaving, dismissing a party or disbanding is shared. If you leave the game, your army breaks up |
+| Mercenary contracts | Joining a kingdom as a mercenary (and becoming a vassal later) is the same on the server |
+| Garrisons and dungeons | Troops you leave in or take from a garrison, and prisoners you put in or take from a dungeon, change the server's too |
+| Your fiefs | Governor, building queue, daily project, garrison wage limit and auto-recruitment are yours to set; building progress, loyalty, security, prosperity and food come from the server |
+| Your kingdom | Policies you set as ruler reach the server; policy changes from the server reach you |
+| Your party's roles | Scout, quartermaster, surgeon and engineer |
+| Companions' development | Gear, skills, focus, attributes, perks, health and level of companions travel both ways: what your game changes (battles you fight, gear you give them) goes to the server, what the server changes (healing, battles of your clan parties) comes to you |
+| Relations and marriages | Relation changes involving you or your clan, and marriages, reach the server |
+| Pregnancies | Shared; births happen on the server, and a newborn appears in your game after you rejoin |
+| Raided villages | A village you loot is looted on the server; villages looted or recovering on the server are shown to everyone |
+| Workshops and caravans | Buying, selling or changing a workshop reaches the server; a caravan you send out is created on the server, which runs it |
+| Other armies | AI lords' and other players' armies are shown on your map. Join one by talking to its leader, as in single player; you travel with it, and its field battles are fought on your screen with the army beside you |
+| Tournaments | Tournaments announced on the server appear in your towns; one you play (and win) is over for everyone, and your win counts on the leaderboard |
+| Quests | Quests run in your game, with their time limits and companions sent to solve them; the issue you took is removed on the server. Rewards (gold, items, renown, relations) reach the server like everything else |
+| Battles with friends | When your battle starts, other players' parties right next to you that are at war with your enemy join it on your side; your game's AI leads their troops, and their losses are taken from their party on the server and on their machine |
 | Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations
@@ -135,15 +152,15 @@ happens.
 - **Not shared yet:**
   - two players trading in the same town at the same time each see the market as it was when they entered
     (both trades still count on the server)
-  - workshops, tournaments and other settlement details beyond the market
   - siege progress details (siege engines, bombardment) beyond the siege itself
-  - raids
-  - quests
-  - relations
-  - marriages
-  - caravans you create yourself (clan parties are shared)
-  - joining another lord's or another player's army
-  - joint battles (players can't fight in the same battle or attack each other)
+  - raids in progress (a village you burn is shared once it is looted, not while you raid it)
+  - quests in progress: a quest lives in your game only, so it is gone after you leave and rejoin (the server
+    removes the issue you took, so nobody else gets it)
+  - income from workshops and caravans is worked out by your game from what it knows; whether it matches single
+    player hasn't been checked yet
+  - an AI army entering, raiding or assaulting a town or castle does it without you (you stay in the army)
+  - joint battles are played by one player: a friend's troops fight under the AI on that player's screen, the
+    friend doesn't control anything in it. Players can't attack each other
 - **Mirrored parties are stand-ins.** A party the server spawns after you joined appears with the right
   name, clan, troops and position, but as a generic party (its map icon may look different).
 - **Heroes in battle results:** deaths, captures and releases are shared, including your own hero being

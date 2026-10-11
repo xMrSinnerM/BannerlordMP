@@ -87,7 +87,10 @@ namespace BannerlordMP.Core.Protocol
         War = 2,
         /// <summary>A, B = factions.</summary>
         Peace = 3,
-        /// <summary>A = clan, B = new kingdom (empty: left its kingdom).</summary>
+        /// <summary>
+        /// A = clan, B = new kingdom (empty: left its kingdom); joined as a mercenary when followed by a field separator,
+        /// "m", a field separator and the award multiplier.
+        /// </summary>
         ClanKingdom = 4,
         /// <summary>A = victim hero, B = killer hero (may be empty).</summary>
         HeroKilled = 5,
@@ -115,6 +118,55 @@ namespace BannerlordMP.Core.Protocol
         CompanionLeft = 16,
         /// <summary>A = a clan's hero (a companion) who joined a party of that clan, B = the party.</summary>
         HeroJoinedParty = 17,
+        /// <summary>
+        /// A = the founding clan, B = the new kingdom, fields separated by <see cref="WorldEventMessage.FieldSeparator"/>:
+        /// id, culture, name, informal name, encyclopedia text, title, ruler title, policies (comma separated).
+        /// </summary>
+        KingdomCreated = 18,
+        /// <summary>
+        /// A = settlement, B = "g" (garrison troops) or "p" (dungeon prisoners), a field separator, then the changes as
+        /// "id:countChange:woundedChange" joined by ';' (heroes excluded: they move as HeroCaptured/HeroReleased).
+        /// </summary>
+        SettlementRoster = 19,
+        /// <summary>A = town or castle, B = its state as the owner sees it (see FiefState in the mod).</summary>
+        FiefState = 20,
+        /// <summary>A = kingdom, B = its active policies, comma separated.</summary>
+        KingdomPolicies = 21,
+        /// <summary>A = party, B = scout, quartermaster, surgeon, engineer hero ids, comma separated (empty: none).</summary>
+        PartyRoles = 22,
+        /// <summary>A = hero, B = other hero, a field separator, then their relation (absolute value).</summary>
+        Relation = 23,
+        /// <summary>A, B = heroes who married.</summary>
+        Married = 24,
+        /// <summary>A = village settlement, B = new state name (Normal, Looted...), a field separator, then the raiding party (may be empty).</summary>
+        VillageState = 25,
+        /// <summary>
+        /// A = a companion, B = changes to their counters as "key=change" joined by ';' (the ledger's hero keys: hp,
+        /// lvl, tx, uf, ua, x:, f:, a:, k:, e:). Sent by whichever machine runs the party they are in.
+        /// </summary>
+        HeroState = 26,
+        /// <summary>A = town, B = workshop tag, a field separator, owner hero, a field separator, workshop type, a field separator, capital.</summary>
+        Workshop = 27,
+        /// <summary>
+        /// A = caravan party a player created, B = owner hero, leader hero (may be empty), home settlement, elite (0/1),
+        /// then its troops as "id:count:wounded" joined by ';', separated by field separators.
+        /// </summary>
+        CaravanCreated = 28,
+        /// <summary>A = town where a tournament was announced.</summary>
+        TournamentStarted = 29,
+        /// <summary>A = town whose tournament is over, B = the winner hero (empty: an AI troop won, or it was cancelled).</summary>
+        TournamentEnded = 30,
+        /// <summary>A = the hero who gave a player a quest (their issue is taken), B = the quest's title (for the log).</summary>
+        QuestTaken = 31,
+        /// <summary>
+        /// A = another player's party that fought on the proposer's side in the proposer's battle, B = its troop
+        /// changes there as "id:countChange:woundedChange" joined by ';'.
+        /// </summary>
+        AllyBattleLosses = 32,
+        /// <summary>A = a hero who became pregnant (the father is their spouse).</summary>
+        Pregnant = 33,
+        /// <summary>A = a mother who gave birth on the server, B = how many children were born alive.</summary>
+        GaveBirth = 34,
     }
 
     /// <summary>
@@ -123,6 +175,9 @@ namespace BannerlordMP.Core.Protocol
     /// </summary>
     public sealed class WorldEventMessage : INetMessage
     {
+        /// <summary>Separates the fields packed into <see cref="B"/> where they may hold any text (names).</summary>
+        public const char FieldSeparator = '\u001f';
+
         public MessageType Type => MessageType.WorldEvent;
         public double HostHours;
         public WorldEventKind Kind;

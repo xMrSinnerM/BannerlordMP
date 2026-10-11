@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BannerlordMP.Core.Protocol;
@@ -42,11 +43,10 @@ namespace BannerlordMP.Session
 
         public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
         {
-            // Only joined players' own armies are mirrored; every other army is just parties the snapshots move.
-            if (leader == MobileParty.MainParty || !IsPlayerParty(leader))
-                return;
+            // Every army is mirrored: players see AI lords' armies and can join them.
             var message = DescribeArmyEvent(kind, leader, party);
-            Log.Info("Player army changed on the host, relaying: " + message);
+            if (IsPlayerParty(leader) || IsPlayerParty(party))
+                Log.Info("Player army changed on the host, relaying: " + message);
             SendToPlayers(message);
         }
 
@@ -86,6 +86,7 @@ namespace BannerlordMP.Session
                 CheckPursuits();
             }
 
+            TickStateRelay(dt);
             _worldTimer += dt;
             if (_worldTimer < WorldSyncInterval)
                 return;
@@ -121,12 +122,27 @@ namespace BannerlordMP.Session
                 }
 
                 case WorldEventMessage proposal:
-                    if (!MayChangeHero(playerId, proposal))
+                    if (!MayChangeHero(playerId, proposal) || !MayChangeState(playerId, proposal))
                         return true;
+                    if (proposal.Kind == WorldEventKind.AllyBattleLosses)
+                    {
+                        ApplyAllyLosses(playerId, proposal);
+                        return true;
+                    }
+                    if (proposal.Kind == WorldEventKind.CaravanCreated)
+                    {
+                        string problem = null;
+                        WorldBridge.Remote(() => problem = StateSync.CreateCaravan(proposal.A, proposal.B, GameBridge.FindHero(Players[playerId].HeroId)?.Clan));
+                        if (problem != null)
+                            Log.Info($"Could not create {NameOf(playerId)}'s caravan {proposal.A}: {problem}");
+                        return true;
+                    }
                     // A player's own action changed the world on their machine (took a castle, killed a lord, joined a
                     // kingdom). Friends trust each other: apply it; OnLocalWorldEvent then relays it to everyone.
                     Log.Info($"{NameOf(playerId)} changed the world: {proposal}");
                     WorldBridge.ApplyWorldEvent(proposal);
+                    if (proposal.Kind == WorldEventKind.HeroState)
+                        RememberCompanion(proposal.A);
                     return true;
 
                 case DecisionVoteMessage vote:
@@ -183,6 +199,39 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>The player's party, also while it waits for its captive hero (inactive, so the party cache skips it).</summary>
+        private int _upkeepDay = -1;
+        private readonly Dictionary<string, int> _foodYesterday = new Dictionary<string, int>();
+
+        /// <summary>
+        /// A line a day per player: food, eaters and gold as the server sees them, so a log shows where supplies
+        /// go when a player says they run out too fast.
+        /// </summary>
+        private void LogPlayerUpkeep()
+        {
+            var day = (int)Math.Floor(GameBridge.NowHours / 24);
+            if (day == _upkeepDay)
+                return;
+            _upkeepDay = day;
+            foreach (var player in Players.Values.Where(p => p.Id != HostPlayerId))
+            {
+                try
+                {
+                    var party = PlayerParty(player.Id);
+                    if (party == null)
+                        continue;
+                    var food = party.TotalFoodAtInventory;
+                    var since = _foodYesterday.TryGetValue(party.StringId, out var before) ? $" ({food - before:+#;-#;0} since yesterday)" : string.Empty;
+                    _foodYesterday[party.StringId] = food;
+                    Log.Info($"Day {day}: {player.Name}'s party has {food} food{since}, uses {-party.FoodChange:0.0} a day, {party.MemberRoster.TotalManCount} men, "
+                             + $"{party.PrisonRoster.TotalManCount} prisoners, {WorldBridge.PartyHero(party)?.Gold} gold{(IsPlayerPartyAway(party) ? ", away" : string.Empty)}");
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Upkeep log failed", e);
+                }
+            }
+        }
+
         private MobileParty PlayerParty(int playerId)
         {
             if (!Players.TryGetValue(playerId, out var player))
@@ -198,6 +247,11 @@ namespace BannerlordMP.Session
         {
             if (proposal.Kind == WorldEventKind.CompanionJoined || proposal.Kind == WorldEventKind.CompanionLeft || proposal.Kind == WorldEventKind.HeroJoinedParty)
                 return MayChangeCompanion(playerId, proposal);
+            if (proposal.Kind == WorldEventKind.KingdomCreated && GameBridge.FindHero(Players[playerId].HeroId)?.Clan?.StringId != proposal.A)
+            {
+                Log.Info($"Ignoring {NameOf(playerId)}'s {proposal.Kind}: not their clan");
+                return false;
+            }
             if (proposal.Kind != WorldEventKind.HeroCaptured && proposal.Kind != WorldEventKind.HeroReleased)
                 return true;
             var hero = GameBridge.FindHero(proposal.A);
@@ -309,8 +363,9 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>
-        /// A player hero's party whose player is not on the map right now: in a battle or conversation, or
-        /// offline. Its food and morale wait for them (a battle takes no time in single player).
+        /// A player hero's party whose player is not on the map right now: in a battle or conversation, browsing a
+        /// town, or offline. Its food and morale wait for them (a battle takes no time in single player, and neither
+        /// does trading in a town: food the player had just bought was eaten while they were still in the market).
         /// </summary>
         public override bool IsPlayedHero(Hero hero) => base.IsPlayedHero(hero) || IsPlayerHero(hero);
 
@@ -319,7 +374,7 @@ namespace BannerlordMP.Session
             if (party?.LeaderHero == null || !IsPlayerHero(party.LeaderHero))
                 return false;
             var player = Players.Values.FirstOrDefault(p => p.PartyId == party.StringId);
-            return player == null || _arbiter.IsDetached(player.Id);
+            return player == null || _arbiter.IsDetached(player.Id) || _arbiter.GetActivity(player.Id) == BannerlordMP.Core.Time.PlayerActivity.Resting;
         }
 
         private void RememberPlayerGold(Hero hero)
@@ -402,14 +457,15 @@ namespace BannerlordMP.Session
                     continue;
                 var target = Parties.Find(player.PartyId, RealSeconds);
                 if (target == null || !target.IsActive || target.CurrentSettlement != null || target.MapEvent != null || target.MapFaction == null
-                    || target.BesiegedSettlement != null || target.SiegeEvent != null)
+                    || target.BesiegedSettlement != null || target.SiegeEvent != null || target.BesiegerCamp != null)
                     continue; // In a town, a battle or a siege of their own: nobody catches them on the map.
                 var center = target.Position.ToVec2();
                 foreach (var chaser in MobileParty.All)
                 {
                     if (chaser == null || chaser == target || !chaser.IsActive || chaser.MapEvent != null || chaser.CurrentSettlement != null
                         || chaser.MapFaction == null || IsRemotePlayerParty(chaser) || IsBattleFrozen(chaser) || chaser.ShouldBeIgnored
-                        || chaser.BesiegedSettlement != null || chaser.MemberRoster.TotalHealthyCount <= 0)
+                        || chaser.BesiegedSettlement != null || chaser.MemberRoster.TotalHealthyCount <= 0
+                        || chaser.IsGarrison || chaser.IsMilitia || (chaser.LeaderHero != null && chaser.LeaderHero.IsPrisoner))
                         continue;
                     if (chaser.TargetParty != target && chaser.ShortTermTargetParty != target)
                         continue;

@@ -27,7 +27,7 @@ namespace BannerlordMP.Session
     /// client's clock is behind, so <see cref="TimeSyncController"/> fast-forwards it and the buffered
     /// updates are replayed as the local clock passes them.
     /// </remarks>
-    internal sealed class ClientSession : MpSession
+    internal sealed partial class ClientSession : MpSession
     {
         private const float PartyStateInterval = 0.1f;
         private const float LedgerInterval = 1f;
@@ -114,6 +114,8 @@ namespace BannerlordMP.Session
             TickDailyFinances();
             LogCaptivity();
             ShowPendingVote();
+            TickStateWatch(dt);
+            StateSync.TickQuests(GameBridge.NowHours);
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
@@ -141,8 +143,24 @@ namespace BannerlordMP.Session
             if (attacker != main && defender != main)
                 return false;
             var other = attacker == main ? defender : attacker;
-            return !IsPlayerParty(other);
+            if (IsPlayerParty(other))
+                return false;
+            // Every other party here is a puppet, and who catches whom is the host's call (EncounterRequest, checked
+            // in HandleEncounterRequest). A puppet can still carry an old chase order from the save or from before a
+            // siege; the game then kept attacking us with a party that was already beaten here, the attack menu came
+            // back however often it was closed, and fighting it crashed the game.
+            if (attacker != main && attacker != null && !_startingRequestedEncounter)
+            {
+                if (_blockedEncounterLogged.Add(attacker.StringId ?? "?"))
+                    Log.Info($"Client: blocked an attack on us by {attacker.StringId} that the server did not ask for ({WorldBridge.WhyNoEncounter(attacker) ?? "fightable here"})");
+                return false;
+            }
+            return true;
         }
+
+        /// <summary>True while starting an encounter the host asked for; any other AI attack on us is refused.</summary>
+        private bool _startingRequestedEncounter;
+        private readonly HashSet<string> _blockedEncounterLogged = new HashSet<string>();
 
         public override void OnLocalBattleEnded(MapEvent mapEvent)
         {
@@ -165,6 +183,7 @@ namespace BannerlordMP.Session
                 });
             }
             Net.SendToAll(result);
+            ReportAllyLosses();
         }
 
         /// <summary>The market of the settlement we are in, as the host sent it: what our trading is measured against.</summary>
@@ -214,7 +233,17 @@ namespace BannerlordMP.Session
             {
                 try
                 {
-                    if (WorldBridge.StartEncounterWith(attacker))
+                    bool started;
+                    _startingRequestedEncounter = true;
+                    try
+                    {
+                        started = WorldBridge.StartEncounterWith(attacker);
+                    }
+                    finally
+                    {
+                        _startingRequestedEncounter = false;
+                    }
+                    if (started)
                     {
                         _encounterWith = attackerId;
                         Log.Info($"Client: {attackerId} caught us; encounter started");
@@ -259,9 +288,19 @@ namespace BannerlordMP.Session
 
         public override void OnLocalArmyEvent(WorldEventKind kind, MobileParty leader, MobileParty party)
         {
-            // Only our own army, and only what the player did (not what the host told us).
-            if (!_welcomed || WorldBridge.ApplyingRemote || leader != MobileParty.MainParty)
+            // Only what the player did (not what the host told us): our own army, or our party in someone else's.
+            if (!_welcomed || WorldBridge.ApplyingRemote)
                 return;
+            if (leader != MobileParty.MainParty)
+            {
+                if (party == MobileParty.MainParty && (kind == WorldEventKind.ArmyPartyJoined || kind == WorldEventKind.ArmyPartyAttached || kind == WorldEventKind.ArmyPartyLeft))
+                {
+                    var joined = DescribeArmyEvent(kind, leader, party);
+                    Log.Info("Proposing to the host: " + joined);
+                    Net.SendToAll(joined);
+                }
+                return;
+            }
             if (party != MobileParty.MainParty)
                 _repuppet.Add(party);
             switch (kind)
@@ -293,6 +332,13 @@ namespace BannerlordMP.Session
             {
                 if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || party.ActualClan != Clan.PlayerClan)
                     continue;
+                if (party.IsCaravan)
+                {
+                    Log.Info($"Client: created caravan {party.StringId}; asking the host to create it");
+                    SendCaravan(party);
+                    WorldBridge.MakePuppet(party);
+                    continue;
+                }
                 if (!party.IsLordParty || party.LeaderHero == null)
                 {
                     Log.Info($"Client: created party {party.StringId} is not a clan party; the server does not know about it");
@@ -475,6 +521,7 @@ namespace BannerlordMP.Session
 
                 case PartyRosterMessage roster when Config.ClientSyncRosters:
                     WorldBridge.ApplyRosters(Parties.Find(roster.PartyId, RealSeconds), roster.Members, roster.Prisoners);
+                    AfterRemoteRoster(roster.PartyId);
                     break;
 
                 case LedgerStateMessage state when Config.ClientSyncOwnParty:
@@ -562,6 +609,7 @@ namespace BannerlordMP.Session
                     break;
                 case WorldEventMessage worldEvent:
                     WorldBridge.ApplyWorldEvent(worldEvent);
+                    AfterRemoteState(worldEvent);
                     break;
             }
         }
@@ -615,9 +663,12 @@ namespace BannerlordMP.Session
                 return; // Not behind, or the clock could not be moved: the normal fast-forward handles it.
 
             _smoother.Clear();
-            if (returned)
+            // Hours the world spent while we were in a battle, or browsing a town (time stands still there in single
+            // player), cost no wages; the server doesn't feed our party for them either.
+            var free = returned || _activity == PlayerActivity.Resting;
+            if (free)
                 _financeDay = (int)Math.Floor(GameBridge.NowHours / 24);
-            Log.Info($"Client: skipped {behind:0.00} hours to the world's time{(returned ? " (no upkeep, back from a battle)" : "")}");
+            Log.Info($"Client: skipped {behind:0.00} hours to the world's time{(returned ? " (no upkeep, back from a battle)" : free ? " (no upkeep, in a town)" : "")}");
             Log.Notify(behind >= 1 ? $"Skipped {behind:0} hours to rejoin the world." : "Rejoined the world.");
         }
 
@@ -668,6 +719,7 @@ namespace BannerlordMP.Session
                     (unknown ?? (unknown = new List<string>())).Add(position.PartyId);
                     continue;
                 }
+                WorldBridge.LeaveSettlementIfMovedAway(party, position.X, position.Y);
                 if (smooth && Config.ClientSmoothPositions)
                 {
                     var current = GameBridge.GetPosition(party);
@@ -713,7 +765,12 @@ namespace BannerlordMP.Session
             {
                 if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || onHost.Contains(party.StringId))
                     continue;
-                if (party.IsGarrison || party.IsMilitia || party.ActualClan == Clan.PlayerClan || IsPlayerParty(party))
+                if (party.ActualClan == Clan.PlayerClan)
+                {
+                    ResendOwnClanParty(party);
+                    continue;
+                }
+                if (party.IsGarrison || party.IsMilitia || IsPlayerParty(party))
                     continue;
 
                 stillMissing.Add(party.StringId);
@@ -732,6 +789,36 @@ namespace BannerlordMP.Session
             }
             foreach (var id in _missingFromHost.Keys.Where(id => !stillMissing.Contains(id)).ToList())
                 _missingFromHost.Remove(id);
+        }
+
+        private const double ResendOwnPartySeconds = 30;
+        private readonly Dictionary<string, double> _ownPartyResent = new Dictionary<string, double>();
+
+        /// <summary>
+        /// One of our clan's parties that the server doesn't have (it refused it, e.g. its leader wasn't our companion
+        /// there yet, or the message was lost). Without the server's copy it never moves; ask again now and then.
+        /// </summary>
+        private void ResendOwnClanParty(MobileParty party)
+        {
+            if (party.IsCaravan && party.CaravanPartyComponent?.Owner?.Clan == Clan.PlayerClan)
+            {
+                if (_ownPartyResent.TryGetValue(party.StringId, out var sent) && RealSeconds - sent < ResendOwnPartySeconds)
+                    return;
+                _ownPartyResent[party.StringId] = RealSeconds;
+                Log.Info($"Client: the server has no caravan {party.StringId}; sending it again");
+                SendCaravan(party);
+                return;
+            }
+            if (party == MobileParty.MainParty || !party.IsLordParty || party.LeaderHero == null || IsPlayerCharacter(party.LeaderHero))
+                return;
+            if (_ownPartyResent.TryGetValue(party.StringId, out var at) && RealSeconds - at < ResendOwnPartySeconds)
+                return;
+            _ownPartyResent[party.StringId] = RealSeconds;
+            Log.Info($"Client: the server has no clan party {party.StringId} (led by {party.LeaderHero.StringId}); sending it again");
+            Net.SendToAll(WorldBridge.DescribeParty(party, GameBridge.NowHours));
+            // The host could not put a party it did not have into our army: send the army again after it.
+            if (party.Army != null && party.Army.LeaderParty == MobileParty.MainParty)
+                _ownArmyChanged = true;
         }
 
         /// <summary>Asks the player about the next pending kingdom decision, when they are free on the map.</summary>
@@ -802,8 +889,9 @@ namespace BannerlordMP.Session
                 _financeDay++;
                 try
                 {
+                    var breakdown = GameBridge.DescribeClanFinances();
                     var change = GameBridge.ApplyDailyClanFinances();
-                    Log.Info($"Client: daily clan finances for day {_financeDay}: {change:+#;-#;0} gold");
+                    Log.Info($"Client: daily clan finances for day {_financeDay}: {change:+#;-#;0} gold ({breakdown}); {GameBridge.DescribeOwnSupplies()}");
                 }
                 catch (Exception e)
                 {

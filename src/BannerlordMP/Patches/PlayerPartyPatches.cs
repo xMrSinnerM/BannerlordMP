@@ -8,6 +8,7 @@ using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.CampaignBehaviors;
 using TaleWorlds.CampaignSystem.CampaignBehaviors.AiBehaviors;
 using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Settlements;
 
 namespace BannerlordMP.Patches
 {
@@ -50,6 +51,9 @@ namespace BannerlordMP.Patches
                 {
                     AccessTools.Method(typeof(FoodConsumptionBehavior), nameof(FoodConsumptionBehavior.DailyTickParty)),
                     AccessTools.Method(typeof(FoodConsumptionBehavior), "PartyConsumeFood"),
+                    // The steps PartyConsumeFood takes, in case the game reaches them another way (its frame tick).
+                    AccessTools.Method(typeof(FoodConsumptionBehavior), "MakeFoodConsumption"),
+                    AccessTools.Method(typeof(FoodConsumptionBehavior), "SlaughterLivestock"),
                     AccessTools.Method(typeof(DesertionCampaignBehavior), "DailyTickParty"),
                 }.Where(method => method != null);
             }
@@ -85,6 +89,58 @@ namespace BannerlordMP.Patches
                 if (Reported.Add(key))
                     Log.Error($"AI planning failed for party {mobileParty?.StringId} (leader {mobileParty?.LeaderHero?.StringId}, faction {mobileParty?.MapFaction?.StringId}); skipped", __exception);
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// A player's party never enters or assaults a settlement on the host: that happens on the player's machine
+        /// and arrives as events. Here the party besieging for its player was sent in by the game's siege AI, which
+        /// fought the assault itself (the player lost hundreds of troops to it) and took the town or castle while the
+        /// player was still preparing; that half-finished the player's own siege, so the attack menu wouldn't close.
+        /// </summary>
+        [HarmonyPatch(typeof(EncounterManager), nameof(EncounterManager.StartSettlementEncounter))]
+        internal static class NoSettlementEncounters
+        {
+            private static readonly HashSet<string> Reported = new HashSet<string>();
+
+            private static bool Prefix(MobileParty attackerParty, Settlement settlement)
+            {
+                if (attackerParty != null && attackerParty != MobileParty.MainParty && !IsPlayerParty(attackerParty))
+                {
+                    // An AI army with a player riding in it enters, raids or assaults: the player isn't taken along
+                    // here (their game decides). They stay in the army and catch up with it afterwards.
+                    if (MpSession.Current is HostSession host)
+                    {
+                        MobileParty rider;
+                        while ((rider = host.OnlinePlayerRidingWith(attackerParty)) != null)
+                        {
+                            rider.AttachedTo = null;
+                            Log.Info($"Detached player party {rider.StringId} from {attackerParty.StringId}'s army before it went into {settlement?.StringId}");
+                        }
+                    }
+                    return true;
+                }
+                if (attackerParty == MobileParty.MainParty || !IsPlayerParty(attackerParty))
+                    return true;
+                if (Reported.Add(attackerParty.StringId + ">" + settlement?.StringId))
+                    Log.Info($"Kept player party {attackerParty.StringId} from entering or assaulting {settlement?.StringId} on the host (their own game does that)");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The host's AI lords call parties into their armies; a player's party only joins an army when its player
+        /// does it (the change arrives from their game).
+        /// </summary>
+        [HarmonyPatch(typeof(MobileParty), nameof(MobileParty.Army), MethodType.Setter)]
+        internal static class NoArmyCallsForPlayers
+        {
+            private static bool Prefix(MobileParty __instance, Army value)
+            {
+                if (value == null || value.LeaderParty == __instance || Game.WorldBridge.ApplyingRemote || !(MpSession.Current is HostSession) || !IsPlayerParty(__instance))
+                    return true;
+                Log.Info($"Kept the AI from calling player party {__instance.StringId} into {value.LeaderParty?.StringId}'s army");
+                return false;
             }
         }
 

@@ -4,6 +4,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.CharacterDevelopment;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Extensions;
 using TaleWorlds.CampaignSystem.Party;
@@ -50,33 +51,7 @@ namespace BannerlordMP.Game
                 return ledger;
             var hero = PartyHero(party);
             if (hero != null)
-            {
-                ledger["g"] = hero.Gold;
-                if (hero.Clan != null && hero.Clan.Leader == hero)
-                {
-                    ledger["inf"] = (int)Math.Floor(hero.Clan.Influence);
-                    ledger["ren"] = (int)Math.Floor(hero.Clan.Renown);
-                }
-                ledger["hp"] = hero.HitPoints;
-                var developer = hero.HeroDeveloper;
-                ledger["lvl"] = hero.Level;
-                ledger["tx"] = developer.TotalXp;
-                ledger["uf"] = developer.UnspentFocusPoints;
-                ledger["ua"] = developer.UnspentAttributePoints;
-                foreach (var skill in Skills.All)
-                {
-                    var xp = (int)Math.Floor(developer.GetSkillXp(skill));
-                    if (xp != 0)
-                        ledger["x:" + skill.StringId] = xp;
-                    var focus = developer.GetFocus(skill);
-                    if (focus != 0)
-                        ledger["f:" + skill.StringId] = focus;
-                }
-                foreach (var attribute in Attributes.All)
-                    ledger["a:" + attribute.StringId] = hero.GetAttributeValue(attribute);
-                CaptureEquipment(hero.BattleEquipment, 'b', ledger);
-                CaptureEquipment(hero.CivilianEquipment, 'c', ledger);
-            }
+                CaptureHero(hero, ledger, true);
 
             CaptureTroops(party.MemberRoster, "m:", "w:", ledger);
             CaptureTroops(party.PrisonRoster, "p:", "q:", ledger);
@@ -96,6 +71,65 @@ namespace BannerlordMP.Game
         }
 
         /// <summary>
+        /// A hero's own counters: health, level and xp, skills, focus, attributes, perks, worn gear; with
+        /// <paramref name="owner"/> also their gold and, for a clan leader, influence and renown.
+        /// </summary>
+        public static void CaptureHero(Hero hero, Dictionary<string, int> ledger, bool owner)
+        {
+            if (owner)
+            {
+                ledger["g"] = hero.Gold;
+                if (hero.Clan != null && hero.Clan.Leader == hero)
+                {
+                    ledger["inf"] = (int)Math.Floor(hero.Clan.Influence);
+                    ledger["ren"] = (int)Math.Floor(hero.Clan.Renown);
+                }
+            }
+            ledger["hp"] = hero.HitPoints;
+            var developer = hero.HeroDeveloper;
+            ledger["lvl"] = hero.Level;
+            ledger["tx"] = developer.TotalXp;
+            ledger["uf"] = developer.UnspentFocusPoints;
+            ledger["ua"] = developer.UnspentAttributePoints;
+            foreach (var skill in Skills.All)
+            {
+                var xp = (int)Math.Floor(developer.GetSkillXp(skill));
+                if (xp != 0)
+                    ledger["x:" + skill.StringId] = xp;
+                var focus = developer.GetFocus(skill);
+                if (focus != 0)
+                    ledger["f:" + skill.StringId] = focus;
+            }
+            foreach (var attribute in Attributes.All)
+                ledger["a:" + attribute.StringId] = hero.GetAttributeValue(attribute);
+            // Perks the player picked ("k:" + perk = 1). They were never sent, so the server's copy of the hero
+            // had none of them and every rejoin brought the hero back without their chosen perks.
+            foreach (var perk in PerkObject.All)
+            {
+                if (hero.GetPerkValue(perk))
+                    ledger["k:" + perk.StringId] = 1;
+            }
+            CaptureEquipment(hero.BattleEquipment, 'b', ledger);
+            CaptureEquipment(hero.CivilianEquipment, 'c', ledger);
+        }
+
+        /// <summary>A companion's counters (<see cref="CaptureHero"/> without gold, influence and renown).</summary>
+        public static Dictionary<string, int> CaptureCompanion(Hero hero)
+        {
+            var ledger = new Dictionary<string, int>();
+            CaptureHero(hero, ledger, false);
+            return ledger.Where(p => p.Value != 0).ToDictionary(p => p.Key, p => p.Value);
+        }
+
+        /// <summary>Changes to a companion's counters; gold, influence, renown, troops and items are not theirs.</summary>
+        public static void ApplyCompanionDelta(Hero hero, Dictionary<string, int> delta)
+        {
+            if (hero == null || !hero.IsAlive || delta.Count == 0)
+                return;
+            ApplyDelta(null, hero, delta.Where(p => p.Key != "g" && p.Key != "inf" && p.Key != "ren").ToDictionary(p => p.Key, p => p.Value));
+        }
+
+        /// <summary>
         /// Focus and attributes are applied as given: the player spent the points on their own machine, and the
         /// unspent counts travel in their own entries.
         /// </summary>
@@ -103,13 +137,18 @@ namespace BannerlordMP.Game
         {
             if (party == null || delta.Count == 0)
                 return;
-            var hero = PartyHero(party);
+            ApplyDelta(party, PartyHero(party), delta);
+        }
+
+        private static void ApplyDelta(MobileParty party, Hero hero, Dictionary<string, int> delta)
+        {
             var troopChanges = new Dictionary<(TroopRoster Roster, string Id), (int Count, int Wounded)>();
             // Level, hero xp and unspent points only change through their own entries. Adding xp can level the
             // hero up and grant points, and adding focus or attributes spends points; the player's game already
             // did both and sent the result, so those side effects are undone after the loop.
             var development = hero == null ? null : new DevelopmentCounters(hero);
             var equipmentChanges = new List<KeyValuePair<string, int>>();
+            var perkChanges = new List<KeyValuePair<string, int>>();
 
             foreach (var pair in delta)
             {
@@ -151,14 +190,18 @@ namespace BannerlordMP.Game
                         else if (attribute != null)
                             hero.HeroDeveloper.RemoveAttribute(attribute, -change);
                     }
+                    else if (key.StartsWith("e:") && hero != null)
+                        equipmentChanges.Add(pair);
+                    else if (key.StartsWith("k:") && hero != null)
+                        perkChanges.Add(pair);
+                    else if (party == null)
+                        continue;
                     else if (key.StartsWith("m:") || key.StartsWith("w:"))
                         AddTroopChange(troopChanges, party.MemberRoster, key, change);
                     else if (key.StartsWith("p:") || key.StartsWith("q:"))
                         AddTroopChange(troopChanges, party.PrisonRoster, key, change);
                     else if (key.StartsWith("i:"))
                         ApplyItem(party.ItemRoster, key.Substring(2), change);
-                    else if (key.StartsWith("e:") && hero != null)
-                        equipmentChanges.Add(pair);
                 }
                 catch (Exception e)
                 {
@@ -173,6 +216,19 @@ namespace BannerlordMP.Game
             catch (Exception e)
             {
                 Log.Error("Level and unspent points could not be applied", e);
+            }
+
+            // Perks after skills and level, so a perk arrives with the skill it needs.
+            foreach (var pair in perkChanges)
+            {
+                try
+                {
+                    ApplyPerkChange(hero, pair.Key.Substring(2), pair.Value);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Perk change {pair.Key}{pair.Value:+#;-#;0} failed", e);
+                }
             }
 
             // Take off before putting on, so swapping the item in a slot works whatever order the entries came in.
@@ -253,6 +309,20 @@ namespace BannerlordMP.Game
                 return;
             var modifier = modifierId.Length > 0 ? MBObjectManager.Instance.GetObject<ItemModifier>(modifierId) : null;
             items.AddToCounts(new EquipmentElement(item, modifier, null, false), change);
+        }
+
+        private static readonly System.Reflection.MethodInfo SetPerkValueInternal = HarmonyLib.AccessTools.Method(typeof(Hero), "SetPerkValueInternal");
+
+        private static void ApplyPerkChange(Hero hero, string id, int change)
+        {
+            var perk = PerkObject.All.FirstOrDefault(p => p.StringId == id);
+            if (perk == null || change == 0)
+                return;
+            var has = hero.GetPerkValue(perk);
+            if (change > 0 && !has)
+                hero.HeroDeveloper.AddPerk(perk);
+            else if (change < 0 && has && SetPerkValueInternal != null)
+                SetPerkValueInternal.Invoke(hero, new object[] { perk, false });
         }
 
         /// <summary>
@@ -427,7 +497,7 @@ namespace BannerlordMP.Game
 
                 if (message.IsLordParty && leader != null && leader.IsAlive && leader.PartyBelongedTo == null)
                 {
-                    party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    party = CreateLordParty(message.PartyId, leader, position, home);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                 }
                 else
@@ -443,6 +513,18 @@ namespace BannerlordMP.Game
                 GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
                 MakePuppet(party);
             });
+            return party;
+        }
+
+        /// <summary>
+        /// A lord party with exactly this id. The game treats the id as a prefix and adds "_party_1" to it, so a party
+        /// copied from another machine got a different id there and the two never matched up.
+        /// </summary>
+        private static MobileParty CreateLordParty(string id, Hero leader, CampaignVec2 position, Settlement home)
+        {
+            var party = LordPartyComponent.CreateLordParty(id, leader, position, 0f, home, leader);
+            if (party.StringId != id)
+                party.StringId = id;
             return party;
         }
 
@@ -465,6 +547,33 @@ namespace BannerlordMP.Game
         }
 
         /// <summary>
+        /// Client: a stand-in that sits inside a settlement here (it was there when the world was saved, or the player
+        /// created it in a town) is never moved by snapshots, because the game positions parties in settlements itself.
+        /// Once the server has it somewhere else, take it out so it follows the server. A new clan party made in a town
+        /// stood still in that town for good, and couldn't reach its army.
+        /// </summary>
+        public static void LeaveSettlementIfMovedAway(MobileParty party, float x, float y)
+        {
+            var settlement = party?.CurrentSettlement;
+            if (settlement == null || party == MobileParty.MainParty || party.IsGarrison || party.IsMilitia || party.MapEvent != null || party.AttachedTo != null)
+                return;
+            if (settlement.Position.ToVec2().DistanceSquared(new Vec2(x, y)) < LeftSettlementDistance * LeftSettlementDistance)
+                return;
+            try
+            {
+                Remote(() => LeaveSettlementAction.ApplyForParty(party));
+                MakePuppet(party);
+                Log.Info($"Client: {party.StringId} left {settlement.StringId} on the server; taking it out here too");
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Could not take {party.StringId} out of {settlement.StringId}", e);
+            }
+        }
+
+        private const float LeftSettlementDistance = 1.5f;
+
+        /// <summary>
         /// Host: a player created a party for one of their clan's heroes on their machine (clan screen). The real party
         /// is made here as a lord party of that hero, with the id, position and troops their game gave it, so their
         /// copy becomes its mirror. From then on the host's AI leads it, as single player's AI leads clan parties.
@@ -473,6 +582,12 @@ namespace BannerlordMP.Game
         public static string CreatePlayerClanParty(Clan clan, PartySpawnedMessage message)
         {
             var leader = GameBridge.FindHero(message.LeaderHeroId);
+            // A companion hired before the server heard of hires (v0.3.29) is still clanless here: hire them now.
+            if (clan != null && leader != null && leader.IsAlive && leader.Clan == null && Session.MpSession.Current?.IsPlayerCharacter(leader) != true)
+            {
+                Remote(() => AddCompanionAction.Apply(clan, leader));
+                Log.Info($"{leader.StringId} was not yet {clan.StringId}'s companion here; added them");
+            }
             if (clan == null || leader == null || leader.Clan != clan || leader == clan.Leader)
                 return "its leader is not a hero of your clan here";
             if (!leader.IsAlive || leader.IsPrisoner)
@@ -480,7 +595,23 @@ namespace BannerlordMP.Game
             var existing = GameBridge.FindParty(message.PartyId);
             if (existing != null)
                 return existing.LeaderHero == leader ? null : "its id is already used by another party";
-            if (leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader)
+            var led = leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader ? leader.PartyBelongedTo : null;
+            if (led != null && led.ActualClan == clan && led.IsLordParty && led.StringId != message.PartyId)
+            {
+                // Made by v0.3.33 or older under a wrong id (the game added "_party_1" to it): give it the player's id.
+                var oldId = led.StringId;
+                Remote(() =>
+                {
+                    led.StringId = message.PartyId;
+                    GameBridge.ApplyRoster(led.MemberRoster, message.Members);
+                    GameBridge.ApplyRoster(led.PrisonRoster, message.Prisoners);
+                    led.Ai.EnableAi();
+                    led.Ai.SetDoNotMakeNewDecisions(false);
+                });
+                Log.Info($"Clan party {oldId} had the wrong id; renamed it {message.PartyId} to match its player's game");
+                return null;
+            }
+            if (led != null)
                 return $"{leader.Name} already leads a party here";
 
             string problem = null;
@@ -490,11 +621,19 @@ namespace BannerlordMP.Game
                 {
                     // Here the hero is usually still a member of the player's party (heroes are not in the ledger).
                     leader.PartyBelongedTo?.MemberRoster.AddToCounts(leader.CharacterObject, -1, false, 0, 0, true, -1);
+                    if (leader.PartyBelongedTo == null && leader.CurrentSettlement != null)
+                        LeaveSettlementAction.ApplyForCharacterOnly(leader);
                     var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
                     var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
-                    var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    var party = CreateLordParty(message.PartyId, leader, position, home);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                     GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
+                    // Led by the host's AI from here, as single player's AI leads clan parties.
+                    party.IgnoreByOtherPartiesTill(CampaignTime.Now);
+                    party.Ai.EnableAi();
+                    party.Ai.SetDoNotMakeNewDecisions(false);
+                    Log.Info($"Created clan party {party.StringId} at ({position.X:0.0}, {position.Y:0.0}): in settlement {party.CurrentSettlement?.StringId ?? "none"}, " +
+                             $"AI disabled {party.Ai.IsDisabled}, behavior {party.DefaultBehavior}, {party.MemberRoster.TotalManCount} men");
                 }
                 catch (Exception e)
                 {
@@ -548,6 +687,10 @@ namespace BannerlordMP.Game
                 return "that party is busy (battle, town or siege)";
             if (attacker.MemberRoster == null || attacker.MemberRoster.TotalHealthyCount <= 0)
                 return "that party has no troops here";
+            if (attacker.IsGarrison || attacker.IsMilitia)
+                return "a garrison or militia doesn't chase on the map";
+            if (attacker.LeaderHero != null && attacker.LeaderHero.IsPrisoner)
+                return "its leader is a prisoner here";
             if (attacker.MapFaction == null || main.MapFaction == null || !FactionManager.IsAtWarAgainstFaction(attacker.MapFaction, main.MapFaction))
                 return "not at war here";
             if (attacker.Position.ToVec2().DistanceSquared(main.Position.ToVec2()) > 3f * 3f)
@@ -672,7 +815,8 @@ namespace BannerlordMP.Game
 
         public static void ApplyWorldEvent(WorldEventMessage message)
         {
-            Log.Info("World event applied: " + message);
+            if (message.Kind != WorldEventKind.HeroState && message.Kind != WorldEventKind.FiefState) // Healing, food and loyalty change every few seconds.
+                Log.Info("World event applied: " + message);
             Remote(() =>
             {
                 try
@@ -683,6 +827,14 @@ namespace BannerlordMP.Game
                         {
                             var settlement = Find<Settlement>(message.A);
                             var owner = GameBridge.FindHero(message.B);
+                            // Our own siege of it is still going on here: changing the owner under it ends the siege halfway
+                            // (the game threw inside its siege-completed handling), which left the attack menu stuck open
+                            // and crashed the game on Attack. The outcome of our siege is ours to report.
+                            if (settlement?.SiegeEvent?.BesiegerCamp?.LeaderParty == MobileParty.MainParty && Session.MpSession.Current is Session.ClientSession)
+                            {
+                                Log.Info($"Ignoring owner change of {message.A} during our own siege of it");
+                                break;
+                            }
                             if (settlement != null && owner != null && settlement.Owner != owner)
                                 ChangeOwnerOfSettlementAction.ApplyByDefault(owner, settlement);
                             break;
@@ -708,11 +860,31 @@ namespace BannerlordMP.Game
                             var clan = Find<Clan>(message.A);
                             if (clan == null)
                                 break;
-                            var kingdom = Find<Kingdom>(message.B);
+                            var fields = (message.B ?? string.Empty).Split(WorldEventMessage.FieldSeparator);
+                            var kingdom = Find<Kingdom>(fields[0]);
+                            var mercenary = fields.Length > 1 && fields[1] == "m";
                             if (kingdom == null && clan.Kingdom != null)
-                                ChangeKingdomAction.ApplyByLeaveKingdom(clan, false);
+                            {
+                                if (clan.IsUnderMercenaryService)
+                                    ChangeKingdomAction.ApplyByLeaveKingdomAsMercenary(clan, false);
+                                else
+                                    ChangeKingdomAction.ApplyByLeaveKingdom(clan, false);
+                            }
                             else if (kingdom != null && clan.Kingdom != kingdom)
+                            {
+                                if (mercenary)
+                                {
+                                    var award = fields.Length > 2 && int.TryParse(fields[2], out var a) ? a : clan.MercenaryAwardMultiplier;
+                                    ChangeKingdomAction.ApplyByJoinFactionAsMercenary(clan, kingdom, CampaignTime.Now, award, false);
+                                }
+                                else
+                                    ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, CampaignTime.Now, false);
+                            }
+                            else if (kingdom != null && clan.Kingdom == kingdom && !mercenary && clan.IsUnderMercenaryService)
+                            {
+                                // A mercenary who became a vassal of the same kingdom.
                                 ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, CampaignTime.Now, false);
+                            }
                             break;
                         }
                         case WorldEventKind.SiegeStarted:
@@ -798,6 +970,52 @@ namespace BannerlordMP.Game
                                 KillCharacterAction.ApplyByBattle(victim, GameBridge.FindHero(message.B), false);
                             break;
                         }
+                        case WorldEventKind.SettlementRoster:
+                            StateSync.ApplySettlementRosterChange(Find<Settlement>(message.A), message.B);
+                            break;
+                        case WorldEventKind.FiefState:
+                            StateSync.ApplyFief(Find<Settlement>(message.A)?.Town, message.B, Session.MpSession.Current is Session.ClientSession);
+                            break;
+                        case WorldEventKind.KingdomPolicies:
+                            StateSync.ApplyPolicies(Find<Kingdom>(message.A), message.B);
+                            break;
+                        case WorldEventKind.PartyRoles:
+                            StateSync.ApplyRoles(GameBridge.FindParty(message.A), message.B);
+                            break;
+                        case WorldEventKind.Relation:
+                            StateSync.ApplyRelation(GameBridge.FindHero(message.A), message.B);
+                            break;
+                        case WorldEventKind.Married:
+                            StateSync.ApplyMarriage(GameBridge.FindHero(message.A), GameBridge.FindHero(message.B));
+                            break;
+                        case WorldEventKind.HeroState:
+                            StateSync.ApplyCompanion(GameBridge.FindHero(message.A), message.B);
+                            break;
+                        case WorldEventKind.Workshop:
+                            StateSync.ApplyWorkshop(Find<Settlement>(message.A), message.B);
+                            break;
+                        case WorldEventKind.TournamentStarted:
+                            StateSync.StartTournament(Find<Settlement>(message.A)?.Town);
+                            break;
+                        case WorldEventKind.TournamentEnded:
+                            StateSync.EndTournament(Find<Settlement>(message.A)?.Town, GameBridge.FindHero(message.B),
+                                !(Session.MpSession.Current is Session.ClientSession) && Session.MpSession.Current?.IsPlayedHero(GameBridge.FindHero(message.B)) == true);
+                            break;
+                        case WorldEventKind.Pregnant:
+                            StateSync.MakePregnant(GameBridge.FindHero(message.A));
+                            break;
+                        case WorldEventKind.GaveBirth:
+                            StateSync.GaveBirth(GameBridge.FindHero(message.A), message.B);
+                            break;
+                        case WorldEventKind.QuestTaken:
+                            StateSync.TakeIssue(GameBridge.FindHero(message.A), message.B);
+                            break;
+                        case WorldEventKind.VillageState:
+                            StateSync.ApplyVillageState(Find<Settlement>(message.A), message.B);
+                            break;
+                        case WorldEventKind.KingdomCreated:
+                            CreateKingdom(Find<Clan>(message.A), message.B);
+                            break;
                         case WorldEventKind.CompanionJoined:
                         {
                             var hero = GameBridge.FindHero(message.A);
@@ -846,6 +1064,71 @@ namespace BannerlordMP.Game
                 }
             });
         }
+
+        // ----- Kingdoms players found -------------------------------------------------------------------------
+
+        public static string DescribeKingdom(Kingdom kingdom)
+        {
+            var fields = new[]
+            {
+                kingdom.StringId, kingdom.Culture?.StringId, kingdom.Name?.ToString(), kingdom.InformalName?.ToString(),
+                kingdom.EncyclopediaText?.ToString(), kingdom.EncyclopediaTitle?.ToString(), kingdom.EncyclopediaRulerTitle?.ToString(),
+                string.Join(",", kingdom.ActivePolicies.Where(p => p != null).Select(p => p.StringId)),
+            };
+            return string.Join(WorldEventMessage.FieldSeparator.ToString(), fields.Select(f => (f ?? string.Empty).Replace(WorldEventMessage.FieldSeparator, ' ')));
+        }
+
+        /// <summary>
+        /// A player founded a kingdom in their game. Without it here their clan stayed kingdomless on the server, so
+        /// their wars and armies (an army needs a kingdom) never existed on the server.
+        /// </summary>
+        private static void CreateKingdom(Clan clan, string description)
+        {
+            var fields = (description ?? string.Empty).Split(WorldEventMessage.FieldSeparator);
+            if (clan == null || fields.Length < 8 || string.IsNullOrEmpty(fields[0]) || Find<Kingdom>(fields[0]) != null)
+                return;
+            if (clan.Kingdom != null && clan.Kingdom.RulingClan == clan)
+            {
+                Log.Info($"{clan.StringId} already rules {clan.Kingdom.StringId}; not founding {fields[0]}");
+                return;
+            }
+            TextObject Text(string value, string fallback) => new TextObject(string.IsNullOrEmpty(value) ? fallback : value);
+            var name = Text(fields[2], clan.Name?.ToString() ?? fields[0]);
+            var policies = new MBList<PolicyObject>();
+            foreach (var id in fields[7].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var policy = Find<PolicyObject>(id);
+                if (policy != null)
+                    policies.Add(policy);
+            }
+            // The game names the kingdom itself; what it raises while founding would go out under that name.
+            Founding = true;
+            try
+            {
+                Campaign.Current.KingdomManager.CreateKingdom(name, Text(fields[3], name.ToString()), Find<CultureObject>(fields[1]) ?? clan.Culture, clan, policies,
+                    Text(fields[4], name.ToString()), Text(fields[5], name.ToString()), Text(fields[6], name.ToString()));
+            }
+            finally
+            {
+                Founding = false;
+            }
+            var kingdom = clan.Kingdom;
+            if (kingdom == null || kingdom.RulingClan != clan)
+            {
+                Log.Info($"Founding {fields[0]} for {clan.StringId} did not work here");
+                return;
+            }
+            // Same id as in the founder's game, so later events about it match.
+            if (kingdom.StringId != fields[0])
+                kingdom.StringId = fields[0];
+            Log.Info($"{clan.StringId} founded kingdom {kingdom.StringId} ({kingdom.Name})");
+            var session = Session.MpSession.Current;
+            session?.OnLocalWorldEvent(WorldEventKind.KingdomCreated, clan.StringId, DescribeKingdom(kingdom));
+            session?.OnLocalWorldEvent(WorldEventKind.ClanKingdom, clan.StringId, kingdom.StringId);
+        }
+
+        /// <summary>A kingdom is being founded here from a player's event; campaign events are not news until it has its id.</summary>
+        public static bool Founding { get; private set; }
 
         // ----- Players' heroes in captivity -------------------------------------------------------------------
 
@@ -1110,12 +1393,18 @@ namespace BannerlordMP.Game
             {
                 case WorldEventKind.ArmyCreated:
                 {
-                    // The client that proposed it made this army itself; only the host has to create it.
+                    // The client that proposed it made this army itself. Other armies (AI lords', other players') are
+                    // mirrored on clients, so a player can see them and join one.
                     var leader = GameBridge.FindHero(message.A);
                     var leaderParty = leader?.PartyBelongedTo;
                     var kingdom = leader?.Clan?.Kingdom;
-                    if (onClient || leaderParty == null || leaderParty.LeaderHero != leader || leaderParty.Army != null || kingdom == null)
+                    if ((onClient && leader == Hero.MainHero) || (leaderParty?.Army != null && leaderParty.LeaderHero == leader))
                         break;
+                    if (leaderParty == null || leaderParty.LeaderHero != leader || kingdom == null)
+                    {
+                        Log.Info($"Cannot create {message.A}'s army here: " + (kingdom == null ? "their clan is in no kingdom here" : "they lead no party here"));
+                        break;
+                    }
                     var parts = (message.B ?? string.Empty).Split('|');
                     var type = int.TryParse(parts[0], out var t) && Enum.IsDefined(typeof(Army.ArmyTypes), t) ? (Army.ArmyTypes)t : Army.ArmyTypes.Patrolling;
                     var target = parts.Length > 1 ? Find<Settlement>(parts[1]) : null;
@@ -1129,14 +1418,28 @@ namespace BannerlordMP.Game
                     var leaderParty = GameBridge.FindParty(message.B);
                     var army = leaderParty?.Army;
                     if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty || party.Army == army)
+                    {
+                        if (!onClient && party?.Army != army)
+                            Log.Info($"Cannot call {message.A} to {message.B}'s army here: " +
+                                     (party == null ? "no such party" : !party.IsActive ? "party inactive" : army == null ? "no army" : "not that army's leader"));
                         break;
-                    if (party.Army != null || (onClient && leaderParty != MobileParty.MainParty))
+                    }
+                    if (party.Army != null)
                         break;
                     KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
                     if (onClient)
-                        MakePuppet(party);
-                    else if (party.MapEvent == null)
-                        party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                    {
+                        if (party != MobileParty.MainParty)
+                            MakePuppet(party);
+                    }
+                    else if (Session.MpSession.Current?.IsPlayerParty(party) == true)
+                        Log.Info($"Player party {party.StringId} joined {leaderParty.StringId}'s army; its player moves it");
+                    else
+                    {
+                        if (party.MapEvent == null)
+                            party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                        Log.Info($"{party.StringId} called to {leaderParty.StringId}'s army; heading there ({party.DefaultBehavior})");
+                    }
                     break;
                 }
                 case WorldEventKind.ArmyPartyAttached:
@@ -1146,8 +1449,6 @@ namespace BannerlordMP.Game
                     var army = leaderParty?.Army;
                     if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty
                         || party.AttachedTo == leaderParty || party.MapEvent != null)
-                        break;
-                    if (onClient && leaderParty != MobileParty.MainParty)
                         break;
                     if (party.Army != army)
                     {
@@ -1166,12 +1467,10 @@ namespace BannerlordMP.Game
                     // The leader leaving is the army breaking up, which arrives as its own event.
                     if (army == null || army.LeaderParty != leaderParty || party == leaderParty)
                         break;
-                    if (onClient && leaderParty != MobileParty.MainParty)
-                        break;
                     party.Army = null;
                     if (party.AttachedTo != null)
                         party.AttachedTo = null;
-                    if (onClient)
+                    if (onClient && party != MobileParty.MainParty)
                         MakePuppet(party);
                     break;
                 }
@@ -1179,9 +1478,9 @@ namespace BannerlordMP.Game
                 {
                     var leaderParty = GameBridge.FindParty(message.A);
                     var army = leaderParty?.Army;
-                    if (army == null || army.LeaderParty != leaderParty || (onClient && leaderParty != MobileParty.MainParty))
+                    if (army == null || army.LeaderParty != leaderParty)
                         break;
-                    var members = army.Parties.Where(p => p != leaderParty).ToList();
+                    var members = army.Parties.Where(p => p != leaderParty && p != MobileParty.MainParty).ToList();
                     DisbandArmyAction.ApplyByUnknownReason(army);
                     if (onClient)
                         members.ForEach(MakePuppet);

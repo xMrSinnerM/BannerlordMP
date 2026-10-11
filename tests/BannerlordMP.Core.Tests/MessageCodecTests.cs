@@ -202,6 +202,11 @@ namespace BannerlordMP.Core.Tests
             Assert.Equal(WorldEventKind.ArmyCreated, army.Kind);
             Assert.Equal("3|", army.B);
             Assert.Equal(WorldEventKind.ArmyDispersed, RoundTrip(new WorldEventMessage { Kind = WorldEventKind.ArmyDispersed, A = "p" }).Kind);
+            var kingdomFields = string.Join(WorldEventMessage.FieldSeparator.ToString(), "new_kingdom", "empire", "Kingdom of Ä", "Ä", "", "", "", "policy_a,policy_b");
+            var kingdom = RoundTrip(new WorldEventMessage { Kind = WorldEventKind.KingdomCreated, A = "clan", B = kingdomFields });
+            Assert.Equal(WorldEventKind.KingdomCreated, kingdom.Kind);
+            Assert.Equal(8, kingdom.B.Split(WorldEventMessage.FieldSeparator).Length);
+            Assert.Equal(kingdomFields, kingdom.B);
 
             Assert.Equal("x", RoundTrip(new EncounterRequestMessage { AttackerPartyId = "x" }).AttackerPartyId);
 
