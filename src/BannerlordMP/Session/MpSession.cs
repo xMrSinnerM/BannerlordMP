@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Core.Time;
 using BannerlordMP.Game;
@@ -88,7 +89,8 @@ namespace BannerlordMP.Session
         }
 
         /// <summary>A hero somebody plays (this machine's, or another player's): only their own game may capture or free them.</summary>
-        public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo));
+        public virtual bool IsPlayedHero(TaleWorlds.CampaignSystem.Hero hero) => hero != null
+            && (hero == TaleWorlds.CampaignSystem.Hero.MainHero || IsPlayerParty(hero.PartyBelongedTo) || Players.Values.Any(p => p.HeroId == hero.StringId));
 
         public bool IsPlayerParty(MobileParty party)
         {

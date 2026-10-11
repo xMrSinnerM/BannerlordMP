@@ -21,6 +21,10 @@ namespace BannerlordMP.Session
         private readonly Dictionary<string, double> _encounterRequested = new Dictionary<string, double>();
         /// <summary>Player heroes' gold as their owners' games last set it. Nothing on the host may change it.</summary>
         private readonly Dictionary<string, int> _playerGold = new Dictionary<string, int>();
+        /// <summary>Players' heroes held prisoner here, and who holds them (party id), as last seen.</summary>
+        private readonly Dictionary<string, string> _heldBy = new Dictionary<string, string>();
+        /// <summary>Where each captive player's hero was last held: where their party comes back when they are freed.</summary>
+        private readonly Dictionary<string, CampaignVec2> _heldAt = new Dictionary<string, CampaignVec2>();
         private float _worldTimer;
         private float _pursuitTimer;
         /// <summary>How close (map units) a chasing enemy must get before the player's game starts the battle.</summary>
@@ -76,17 +80,19 @@ namespace BannerlordMP.Session
             if (_worldTimer < WorldSyncInterval)
                 return;
             _worldTimer = 0;
+            TickCaptivity();
 
             foreach (var pair in _peers)
             {
                 var playerId = pair.Value.PlayerId;
-                if (playerId < 0 || !Players.TryGetValue(playerId, out var player))
+                if (playerId < 0 || !Players.ContainsKey(playerId))
                     continue;
-                var party = Parties.Find(player.PartyId, RealSeconds);
+                var party = PlayerParty(playerId);
                 if (party == null)
                     continue;
                 SendLedgerState(pair.Key, playerId, party);
-                SendNearbyRosters(pair.Key, playerId, party);
+                if (party.IsActive)
+                    SendNearbyRosters(pair.Key, playerId, party);
             }
         }
 
@@ -96,15 +102,17 @@ namespace BannerlordMP.Session
             {
                 case LedgerDeltaMessage delta:
                 {
-                    var party = Parties.Find(Players[playerId].PartyId, RealSeconds);
-                    EnforcePlayerGold(party?.LeaderHero);
+                    var party = PlayerParty(playerId);
+                    EnforcePlayerGold(WorldBridge.PartyHero(party));
                     WorldBridge.Remote(() => WorldBridge.ApplyLedgerDelta(party, delta.Delta));
-                    RememberPlayerGold(party?.LeaderHero);
+                    RememberPlayerGold(WorldBridge.PartyHero(party));
                     _ledgerAck[playerId] = delta.Seq;
                     return true;
                 }
 
                 case WorldEventMessage proposal:
+                    if (!MayChangeHero(playerId, proposal))
+                        return true;
                     // A player's own action changed the world on their machine (took a castle, killed a lord, joined a
                     // kingdom). Friends trust each other: apply it; OnLocalWorldEvent then relays it to everyone.
                     Log.Info($"{NameOf(playerId)} changed the world: {proposal}");
@@ -164,6 +172,95 @@ namespace BannerlordMP.Session
             return false;
         }
 
+        /// <summary>The player's party, also while it waits for its captive hero (inactive, so the party cache skips it).</summary>
+        private MobileParty PlayerParty(int playerId)
+        {
+            if (!Players.TryGetValue(playerId, out var player))
+                return null;
+            return Parties.Find(player.PartyId, RealSeconds) ?? GameBridge.FindParty(player.PartyId);
+        }
+
+        /// <summary>
+        /// Only a player's own game captures or frees their hero (it fought the battle, it runs the captivity). A
+        /// proposal about somebody else's played hero is ignored.
+        /// </summary>
+        private bool MayChangeHero(int playerId, WorldEventMessage proposal)
+        {
+            if (proposal.Kind != WorldEventKind.HeroCaptured && proposal.Kind != WorldEventKind.HeroReleased)
+                return true;
+            var hero = GameBridge.FindHero(proposal.A);
+            if (hero == null || !IsPlayedHero(hero) || hero.StringId == Players[playerId].HeroId)
+                return true;
+            Log.Info($"Ignoring {NameOf(playerId)}'s {proposal}: that hero is played by someone else");
+            return false;
+        }
+
+        /// <summary>An online joined player's hero (not the host's own).</summary>
+        public bool IsOnlinePlayerHero(Hero hero) => hero != null && Players.Values.Any(p => p.Id != HostPlayerId && p.HeroId == hero.StringId);
+
+        /// <summary>
+        /// Players' heroes in captivity, checked every second. The host's world moves prisoners on its own: a captor
+        /// takes them to a dungeon, another party takes them, a peace or a fallen castle frees them. The player's game
+        /// learns where it is held, and a freed hero gets their party back (set up again for its player if online).
+        /// </summary>
+        private void TickCaptivity()
+        {
+            foreach (var slot in _slots.Slots)
+            {
+                var hero = GameBridge.FindHero(slot.HeroId);
+                if (hero == null || !hero.IsAlive)
+                {
+                    _heldBy.Remove(slot.HeroId);
+                    continue;
+                }
+                if (hero.IsPrisoner)
+                {
+                    var captor = hero.PartyBelongedToAsPrisoner;
+                    if (captor == null)
+                        continue;
+                    _heldAt[hero.StringId] = WorldBridge.PlaceOf(captor);
+                    // Taken by the host's own game (it never fights players' parties, but just in case): hide the party too.
+                    var kept = WorldBridge.FindKeptParty(hero);
+                    if (kept != null && kept.IsActive)
+                        WorldBridge.Remote(() => WorldBridge.HideKeptParty(kept));
+                    if (_heldBy.TryGetValue(hero.StringId, out var previous) && previous != captor.Id)
+                    {
+                        var where = captor.IsSettlement ? captor.Settlement.StringId : captor.MobileParty?.StringId;
+                        Log.Info($"{hero.StringId} is now held by {where} (was {previous}); telling the players");
+                        if (!string.IsNullOrEmpty(where))
+                            SendToPlayers(new WorldEventMessage { HostHours = GameBridge.NowHours, Kind = WorldEventKind.HeroCaptured, A = hero.StringId, B = where });
+                    }
+                    _heldBy[hero.StringId] = captor.Id;
+                    continue;
+                }
+
+                var wasHeld = _heldBy.Remove(hero.StringId);
+                MobileParty party = null;
+                if (hero.PartyBelongedTo == null)
+                {
+                    var at = _heldAt.TryGetValue(hero.StringId, out var place) ? place : (CampaignVec2?)null;
+                    WorldBridge.Remote(() => party = WorldBridge.RestoreKeptParty(hero, at));
+                }
+                else if (wasHeld && hero.PartyBelongedTo.LeaderHero == hero)
+                {
+                    party = hero.PartyBelongedTo;
+                }
+                _heldAt.Remove(hero.StringId);
+                if (party == null)
+                    continue;
+                if (IsOnlinePlayerHero(hero))
+                {
+                    PrepareOnlinePlayerParty(party);
+                    Log.Info($"{hero.StringId} is free; their party {party.StringId} follows its player again");
+                }
+                else
+                {
+                    GameBridge.Freeze(party);
+                    Log.Info($"{hero.StringId} is free; their party {party.StringId} waits for its player");
+                }
+            }
+        }
+
         /// <summary>
         /// A player's money is theirs: their own game computes wages and income exactly as single player does.
         /// The host sees their clan as an AI clan and would apply AI finances (and AI gold top-ups) to it, so any
@@ -210,9 +307,9 @@ namespace BannerlordMP.Session
         private void OnPlayerEnteredWorld(int peer, int playerId, MobileParty party)
         {
             // Restores what the hero had when its owner last played (or when the server started).
-            EnforcePlayerGold(party.LeaderHero);
-            WorldBridge.RepairUnspentPoints(party.LeaderHero);
-            RememberPlayerGold(party.LeaderHero);
+            EnforcePlayerGold(WorldBridge.PartyHero(party));
+            WorldBridge.RepairUnspentPoints(WorldBridge.PartyHero(party));
+            RememberPlayerGold(WorldBridge.PartyHero(party));
             _rostersSent[playerId] = new Dictionary<string, int>();
             _ledgerAck[playerId] = 0;
             SendLedgerState(peer, playerId, party);
@@ -226,7 +323,7 @@ namespace BannerlordMP.Session
 
         private void SendLedgerState(int peer, int playerId, MobileParty party)
         {
-            EnforcePlayerGold(party.LeaderHero);
+            EnforcePlayerGold(WorldBridge.PartyHero(party));
             _ledgerAck.TryGetValue(playerId, out var ack);
             Net.Send(peer, new LedgerStateMessage { AckSeq = ack, State = WorldBridge.CaptureLedger(party) });
         }

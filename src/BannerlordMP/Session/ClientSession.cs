@@ -112,6 +112,7 @@ namespace BannerlordMP.Session
             SyncOwnArmy();
             TickOwnArmyHourly();
             TickDailyFinances();
+            LogCaptivity();
             ShowPendingVote();
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
@@ -501,6 +502,8 @@ namespace BannerlordMP.Session
             }
             _playerId = welcome.PlayerId;
             Log.Info($"Client: welcomed as player {_playerId}; taking control of {hero.StringId} (main hero now {Hero.MainHero?.StringId})");
+            // A prisoner on the server: take control through the party they left behind, then go back to the captor.
+            var captor = WorldBridge.LeaveCaptivityForJoin(hero);
             GameBridge.TakeControlOf(hero);
             Log.Info($"Client: main hero is {Hero.MainHero?.StringId}, main party {MobileParty.MainParty?.StringId}, clan {Clan.PlayerClan?.StringId}");
             GameBridge.ReleaseOwnParty();
@@ -518,6 +521,11 @@ namespace BannerlordMP.Session
                 }
             }
             Parties.Rebuild(RealSeconds);
+            if (captor != null)
+            {
+                WorldBridge.ReturnToCaptivity(hero, captor);
+                Log.Notify($"{hero.Name} is still a prisoner. Wait for a chance to escape, a ransom offer or a peace.");
+            }
             _welcomed = true;
             Log.Info($"Client: {count} parties are now puppets; mirroring the host's world");
             Log.Notify($"Joined! You are {hero.Name}.");
@@ -795,6 +803,23 @@ namespace BannerlordMP.Session
                 }
             }
             _financeDay = day;
+        }
+
+        private int _captiveDayLogged = -1;
+
+        /// <summary>A line a day while we are a prisoner, so a log shows whether single player's captivity is running.</summary>
+        private void LogCaptivity()
+        {
+            if (!PlayerCaptivity.IsCaptive)
+            {
+                _captiveDayLogged = -1;
+                return;
+            }
+            var day = PlayerCaptivity.CaptiveTimeInDays;
+            if (day == _captiveDayLogged)
+                return;
+            _captiveDayLogged = day;
+            Log.Info($"Client: prisoner for {day} day(s), held by {PlayerCaptivity.CaptorParty?.Id}, menu {Campaign.Current?.CurrentMenuContext?.GameMenu?.StringId ?? "none"}");
         }
 
         private void SendLedgerChanges()

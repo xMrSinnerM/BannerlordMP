@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.27, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.28, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -117,6 +117,7 @@ happens.
 | Town and village markets | When you enter, your game gets the server's real stock, gold, prosperity and prices; when you leave, what you bought and sold goes back to the server, so the next player finds the market as you left it |
 | Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, level, skill xp, attribute and focus points (spent and unspent), clan renown and influence, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |
+| Being captured | Lose a battle and you are taken prisoner as in single player: the captivity menus, the chance to escape and ransom offers run on your machine, and the server makes your hero the same captor's prisoner. Your party waits, hidden, until you are free. If the captor takes you to a dungeon, you follow. A peace or a fallen castle that frees you on the server frees you too. You can leave and rejoin while captured |
 | Being attacked | AI parties hunt players on the server; when one catches you, the battle starts on your machine |
 | Battle results | Losses and destroyed parties applied to the real world |
 | Your money | Your game computes your clan's daily wages and income exactly as single player does; the server never changes your gold on its own |
@@ -145,15 +146,16 @@ happens.
   - joint battles (players can't fight in the same battle or attack each other)
 - **Mirrored parties are stand-ins.** A party the server spawns after you joined appears with the right
   name, clan, troops and position, but as a generic party (its map icon may look different).
-- **Heroes in battle results:** deaths, captures and releases are shared. A *player's* hero being captured
-  is not handled yet, and lords moved to or from a dungeon or sold to a ransom broker aren't either.
+- **Heroes in battle results:** deaths, captures and releases are shared, including your own hero being
+  captured. Companions captured with you aren't shared yet, and lords moved to or from a dungeon or sold to a
+  ransom broker aren't either (except your own hero: you follow wherever the server takes you).
 - **Steam features** (relay, lobbies, invites) depend on the game's own Steam integration delivering
   Steam callbacks to mods. That's untested; LAN and direct IP don't depend on it.
 - **Character creator heroes** start near a town of their culture, not where single player would start
   them. The server keeps their values within what creation can give (attributes up to 10, skills up to
   150, focus up to 5, gold up to 5000, 20 troops of tier 3 or lower, 100 inventory items, no item worth
   more than 10000, renown up to 100), so a modified client can't send a rich or maxed-out hero.
-  A player whose hero is captured, or has lost their party, can't join until that's handled.
+  A player whose hero has lost their party (other than by being captured) can't join until that's handled.
 - **The host in a battle** pauses the world for everyone, unless you use a dedicated host. The dedicated
   host still needs a full game window; a headless server is not possible yet.
 - **The host's save list** gains a `BannerlordMP_Server` save, written each time someone joins, and a
