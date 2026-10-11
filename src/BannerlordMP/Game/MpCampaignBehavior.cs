@@ -46,6 +46,10 @@ namespace BannerlordMP.Game
                 World(WorldEventKind.TournamentEnded, town?.Settlement?.StringId, string.Empty));
             CampaignEvents.OnQuestStartedEvent.AddNonSerializedListener(this, quest =>
                 World(WorldEventKind.QuestTaken, quest?.QuestGiver?.StringId, quest?.Title?.ToString()));
+            CampaignEvents.OnChildConceivedEvent.AddNonSerializedListener(this, mother =>
+                World(WorldEventKind.Pregnant, mother?.StringId, string.Empty));
+            CampaignEvents.OnGivenBirthEvent.AddNonSerializedListener(this, (mother, children, stillborn) =>
+                World(WorldEventKind.GaveBirth, mother?.StringId, (children?.Count ?? 0).ToString()));
             CampaignEvents.MapEventStarted.AddNonSerializedListener(this, (mapEvent, attacker, defender) =>
             {
                 if (mapEvent != null)

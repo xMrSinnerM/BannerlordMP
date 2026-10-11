@@ -96,6 +96,11 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.39 gear given to a new wife (and her pregnancy) were gone after a rejoin: she joined the player's party before
+  the marriage reached the server, so the server refused that move (not their clan yet) and then refused her gear
+  changes ("not in their party here"), losing the items → the client resends the spouse's party move after the
+  marriage, and `HostSession.BringIntoParty` puts a free clan member the player has with them into their party
+  instead of refusing. Pregnancies: `WorldEvent`s Pregnant (33) / GaveBirth (34); newborns reach clients on rejoin.
 - v0.3.38 a companion made governor of a town they weren't in never arrived: single player sends them travelling and
   finishes the trip on an hourly turn of `TeleportationCampaignBehavior`, which is off on clients →
   `StateSync.TickOwnTravellers` gives the player's own clan's travellers that turn (also party leaders sent from afar).

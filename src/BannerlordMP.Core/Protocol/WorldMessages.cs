@@ -163,6 +163,10 @@ namespace BannerlordMP.Core.Protocol
         /// changes there as "id:countChange:woundedChange" joined by ';'.
         /// </summary>
         AllyBattleLosses = 32,
+        /// <summary>A = a hero who became pregnant (the father is their spouse).</summary>
+        Pregnant = 33,
+        /// <summary>A = a mother who gave birth on the server, B = how many children were born alive.</summary>
+        GaveBirth = 34,
     }
 
     /// <summary>

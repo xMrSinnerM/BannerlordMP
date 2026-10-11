@@ -51,7 +51,14 @@ namespace BannerlordMP.Session
                 _relationsChanged.Clear();
                 // The game announces a marriage before it happens; by now it has.
                 foreach (var (hero, other) in _marriages.Where(m => m.Item1.Spouse == m.Item2))
+                {
                     OnLocalWorldEvent(WorldEventKind.Married, hero.StringId, other.StringId);
+                    // The spouse joined our party before the marriage was sent, when the server still saw them as
+                    // someone else's clan member and refused the move; now it can take it.
+                    var ourParty = MobileParty.MainParty;
+                    foreach (var spouse in new[] { hero, other }.Where(h => h != Hero.MainHero && h.PartyBelongedTo == ourParty && ourParty?.StringId != null))
+                        OnLocalWorldEvent(WorldEventKind.HeroJoinedParty, spouse.StringId, ourParty.StringId);
+                }
                 _marriages.Clear();
 
                 WatchSettlementRosters();

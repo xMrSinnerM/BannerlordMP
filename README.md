@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.38, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.39, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -133,6 +133,7 @@ happens.
 | Your party's roles | Scout, quartermaster, surgeon and engineer |
 | Companions' development | Gear, skills, focus, attributes, perks, health and level of companions travel both ways: what your game changes (battles you fight, gear you give them) goes to the server, what the server changes (healing, battles of your clan parties) comes to you |
 | Relations and marriages | Relation changes involving you or your clan, and marriages, reach the server |
+| Pregnancies | Shared; births happen on the server, and a newborn appears in your game after you rejoin |
 | Raided villages | A village you loot is looted on the server; villages looted or recovering on the server are shown to everyone |
 | Workshops and caravans | Buying, selling or changing a workshop reaches the server; a caravan you send out is created on the server, which runs it |
 | Other armies | AI lords' and other players' armies are shown on your map. Join one by talking to its leader, as in single player; you travel with it, and its field battles are fought on your screen with the army beside you |

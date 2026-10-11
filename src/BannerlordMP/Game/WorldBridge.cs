@@ -1001,6 +1001,12 @@ namespace BannerlordMP.Game
                             StateSync.EndTournament(Find<Settlement>(message.A)?.Town, GameBridge.FindHero(message.B),
                                 !(Session.MpSession.Current is Session.ClientSession) && Session.MpSession.Current?.IsPlayedHero(GameBridge.FindHero(message.B)) == true);
                             break;
+                        case WorldEventKind.Pregnant:
+                            StateSync.MakePregnant(GameBridge.FindHero(message.A));
+                            break;
+                        case WorldEventKind.GaveBirth:
+                            StateSync.GaveBirth(GameBridge.FindHero(message.A), message.B);
+                            break;
                         case WorldEventKind.QuestTaken:
                             StateSync.TakeIssue(GameBridge.FindHero(message.A), message.B);
                             break;

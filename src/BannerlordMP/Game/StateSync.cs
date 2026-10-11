@@ -535,6 +535,46 @@ namespace BannerlordMP.Game
             }
         }
 
+        // ----- Pregnancies ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A pregnancy that began in one game. The server's pregnancy keeps its due date and the birth happens there
+        /// (clients' daily turns are off); a client's copy only shows the mother as pregnant.
+        /// </summary>
+        public static void MakePregnant(Hero mother)
+        {
+            if (mother == null || !mother.IsAlive || mother.IsPregnant)
+                return;
+            MakePregnantAction.Apply(mother);
+            Log.Info($"{mother.StringId} is pregnant");
+        }
+
+        /// <summary>
+        /// Client: the mother gave birth on the server. The children are new heroes that only reach this game with the
+        /// server's save, so the player is told they appear after rejoining.
+        /// </summary>
+        public static void GaveBirth(Hero mother, string alive)
+        {
+            if (mother == null || !(Session.MpSession.Current is Session.ClientSession))
+                return;
+            mother.IsPregnant = false;
+            var behavior = Campaign.Current?.GetCampaignBehavior<PregnancyCampaignBehavior>();
+            if (behavior != null && PregnancyList?.GetValue(behavior) is System.Collections.IList list)
+            {
+                foreach (var entry in list.Cast<object>().Where(e => PregnancyMother?.GetValue(e) == mother).ToList())
+                    list.Remove(entry);
+            }
+            Log.Info($"{mother.StringId} gave birth on the server ({alive} alive)");
+            if (mother.Clan != null && mother.Clan == Clan.PlayerClan && int.TryParse(alive, out var count) && count > 0)
+                Log.Notify($"{mother.Name} gave birth. The child joins your clan in your game the next time you join the server.");
+        }
+
+        private static readonly System.Reflection.FieldInfo PregnancyList =
+            HarmonyLib.AccessTools.Field(typeof(PregnancyCampaignBehavior), "_heroPregnancies");
+
+        private static readonly System.Reflection.FieldInfo PregnancyMother =
+            HarmonyLib.AccessTools.Field(HarmonyLib.AccessTools.Inner(typeof(PregnancyCampaignBehavior), "Pregnancy"), "Mother");
+
         // ----- Relations, marriages, villages -----------------------------------------------------------------
 
         public static string DescribeRelation(Hero hero, Hero other) => Join(other.StringId, CharacterRelationManager.GetHeroRelation(hero, other));

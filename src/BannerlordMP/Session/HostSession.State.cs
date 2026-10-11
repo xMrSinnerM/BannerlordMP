@@ -4,6 +4,7 @@ using System.Linq;
 using BannerlordMP.Core.Protocol;
 using BannerlordMP.Game;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Settlements;
 
 namespace BannerlordMP.Session
@@ -53,9 +54,19 @@ namespace BannerlordMP.Session
                     if (companion == null || clan == null || companion.Clan != clan || IsPlayedHero(companion))
                         problem = "not their companion";
                     else if (companion.PartyBelongedTo == null || companion.PartyBelongedTo.StringId != Players[playerId].PartyId)
-                        problem = "not in their party here";
+                        problem = BringIntoParty(playerId, companion);
                     break;
                 }
+                case WorldEventKind.Pregnant:
+                {
+                    var mother = GameBridge.FindHero(proposal.A);
+                    if (mother == null || clan == null || (mother.Clan != clan && mother.Spouse != hero))
+                        problem = "not their clan's hero";
+                    break;
+                }
+                case WorldEventKind.GaveBirth:
+                    problem = "births happen on the server";
+                    break;
                 case WorldEventKind.Workshop:
                 {
                     var fields = (proposal.B ?? string.Empty).Split(WorldEventMessage.FieldSeparator);
@@ -98,6 +109,30 @@ namespace BannerlordMP.Session
         }
 
         public override void OnLocalMarriage(Hero hero, Hero other) => _marriages.Add((hero, other));
+
+        /// <summary>
+        /// A clan member is with the player in their game but not in their party here: their move into it never
+        /// arrived (a new spouse joins the party before the marriage reaches the server, so that move was refused).
+        /// Without this, the gear the player gives them was refused too and vanished with the items. Put them in the
+        /// party unless the server has them busy (leading a party, governing, captive).
+        /// </summary>
+        private string BringIntoParty(int playerId, Hero companion)
+        {
+            var party = PlayerParty(playerId);
+            if (party == null)
+                return "their party is not here";
+            if (!companion.IsAlive || companion.IsPrisoner)
+                return "dead or captive here";
+            if (companion.PartyBelongedTo?.LeaderHero == companion)
+                return "leading a party here";
+            if (companion.GovernorOf != null)
+                return "governing " + companion.GovernorOf.Name + " here";
+            WorldBridge.Remote(() => AddHeroToPartyAction.Apply(companion, party, false));
+            if (companion.PartyBelongedTo != party)
+                return "could not be moved into their party here";
+            Log.Info($"Moved {companion.StringId} into {NameOf(playerId)}'s party: they are with them in their game");
+            return null;
+        }
 
         /// <summary>
         /// Another player's party fought beside this player in their battle: take its losses from it here. Its owner's
