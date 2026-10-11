@@ -32,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 11) and tell the owner to update both PCs.
+   (currently 12) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -96,6 +96,10 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.35 a kingdom a player founded existed only in their game (the server's copy of the clan stayed kingdomless),
+  so the server never made their army and the called companion party never came → `WorldEvent` KingdomCreated (18,
+  protocol 12): the founder's game describes it, the host founds it with `KingdomManager.CreateKingdom`, gives it the
+  same id (relays held while founding, `WorldBridge.Founding`), and relays it. Refused army creations/calls are logged.
 - v0.3.34 companion clan parties still stood still: `LordPartyComponent.CreateLordParty` treats the id as a prefix and
   adds `_party_1`, so the server's copy got a different id than the client's (and the client's copies of new AI lords
   too); nothing matched up, army joins found no party → `WorldBridge.CreateLordParty` sets the exact id; the host renames

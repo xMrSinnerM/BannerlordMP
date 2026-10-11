@@ -115,6 +115,11 @@ namespace BannerlordMP.Core.Protocol
         CompanionLeft = 16,
         /// <summary>A = a clan's hero (a companion) who joined a party of that clan, B = the party.</summary>
         HeroJoinedParty = 17,
+        /// <summary>
+        /// A = the founding clan, B = the new kingdom, fields separated by <see cref="WorldEventMessage.FieldSeparator"/>:
+        /// id, culture, name, informal name, encyclopedia text, title, ruler title, policies (comma separated).
+        /// </summary>
+        KingdomCreated = 18,
     }
 
     /// <summary>
@@ -123,6 +128,9 @@ namespace BannerlordMP.Core.Protocol
     /// </summary>
     public sealed class WorldEventMessage : INetMessage
     {
+        /// <summary>Separates the fields packed into <see cref="B"/> where they may hold any text (names).</summary>
+        public const char FieldSeparator = '\u001f';
+
         public MessageType Type => MessageType.WorldEvent;
         public double HostHours;
         public WorldEventKind Kind;

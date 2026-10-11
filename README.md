@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.34, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.35, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -113,7 +113,7 @@ happens.
 | Every party's position | Smoothed between updates |
 | Parties appearing and disappearing | Bandits, caravans, lords, new player heroes... mirrored on every machine |
 | Troops of parties near you | Kept accurate, so the army you attack is the real one |
-| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
+| Towns and castles changing hands, wars, peace, clans joining or leaving kingdoms, kingdoms players found, heroes dying, lords taken prisoner or freed | Applied on every machine; changes *you* cause (taking a castle, joining a kingdom) go to the server first |
 | Town and village markets | When you enter, your game gets the server's real stock, gold, prosperity and prices; when you leave, what you bought and sold goes back to the server, so the next player finds the market as you left it |
 | Your own party and hero | Gold, troops, prisoners, items, the equipment your hero wears (battle and civilian), health, level, skill xp, attribute and focus points (spent and unspent), clan renown and influence, kept in agreement with the server: it pays wages, eats food and heals; you buy, recruit, loot and level up |
 | Sieges | A siege you start reaches the server and everyone sees it; the server's sieges (AI or other players) appear for everyone. Lifting or ending one is shared too |

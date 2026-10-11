@@ -917,6 +917,9 @@ namespace BannerlordMP.Game
                                 KillCharacterAction.ApplyByBattle(victim, GameBridge.FindHero(message.B), false);
                             break;
                         }
+                        case WorldEventKind.KingdomCreated:
+                            CreateKingdom(Find<Clan>(message.A), message.B);
+                            break;
                         case WorldEventKind.CompanionJoined:
                         {
                             var hero = GameBridge.FindHero(message.A);
@@ -965,6 +968,71 @@ namespace BannerlordMP.Game
                 }
             });
         }
+
+        // ----- Kingdoms players found -------------------------------------------------------------------------
+
+        public static string DescribeKingdom(Kingdom kingdom)
+        {
+            var fields = new[]
+            {
+                kingdom.StringId, kingdom.Culture?.StringId, kingdom.Name?.ToString(), kingdom.InformalName?.ToString(),
+                kingdom.EncyclopediaText?.ToString(), kingdom.EncyclopediaTitle?.ToString(), kingdom.EncyclopediaRulerTitle?.ToString(),
+                string.Join(",", kingdom.ActivePolicies.Where(p => p != null).Select(p => p.StringId)),
+            };
+            return string.Join(WorldEventMessage.FieldSeparator.ToString(), fields.Select(f => (f ?? string.Empty).Replace(WorldEventMessage.FieldSeparator, ' ')));
+        }
+
+        /// <summary>
+        /// A player founded a kingdom in their game. Without it here their clan stayed kingdomless on the server, so
+        /// their wars and armies (an army needs a kingdom) never existed on the server.
+        /// </summary>
+        private static void CreateKingdom(Clan clan, string description)
+        {
+            var fields = (description ?? string.Empty).Split(WorldEventMessage.FieldSeparator);
+            if (clan == null || fields.Length < 8 || string.IsNullOrEmpty(fields[0]) || Find<Kingdom>(fields[0]) != null)
+                return;
+            if (clan.Kingdom != null && clan.Kingdom.RulingClan == clan)
+            {
+                Log.Info($"{clan.StringId} already rules {clan.Kingdom.StringId}; not founding {fields[0]}");
+                return;
+            }
+            TextObject Text(string value, string fallback) => new TextObject(string.IsNullOrEmpty(value) ? fallback : value);
+            var name = Text(fields[2], clan.Name?.ToString() ?? fields[0]);
+            var policies = new MBList<PolicyObject>();
+            foreach (var id in fields[7].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var policy = Find<PolicyObject>(id);
+                if (policy != null)
+                    policies.Add(policy);
+            }
+            // The game names the kingdom itself; what it raises while founding would go out under that name.
+            Founding = true;
+            try
+            {
+                Campaign.Current.KingdomManager.CreateKingdom(name, Text(fields[3], name.ToString()), Find<CultureObject>(fields[1]) ?? clan.Culture, clan, policies,
+                    Text(fields[4], name.ToString()), Text(fields[5], name.ToString()), Text(fields[6], name.ToString()));
+            }
+            finally
+            {
+                Founding = false;
+            }
+            var kingdom = clan.Kingdom;
+            if (kingdom == null || kingdom.RulingClan != clan)
+            {
+                Log.Info($"Founding {fields[0]} for {clan.StringId} did not work here");
+                return;
+            }
+            // Same id as in the founder's game, so later events about it match.
+            if (kingdom.StringId != fields[0])
+                kingdom.StringId = fields[0];
+            Log.Info($"{clan.StringId} founded kingdom {kingdom.StringId} ({kingdom.Name})");
+            var session = Session.MpSession.Current;
+            session?.OnLocalWorldEvent(WorldEventKind.KingdomCreated, clan.StringId, DescribeKingdom(kingdom));
+            session?.OnLocalWorldEvent(WorldEventKind.ClanKingdom, clan.StringId, kingdom.StringId);
+        }
+
+        /// <summary>A kingdom is being founded here from a player's event; campaign events are not news until it has its id.</summary>
+        public static bool Founding { get; private set; }
 
         // ----- Players' heroes in captivity -------------------------------------------------------------------
 
@@ -1233,8 +1301,13 @@ namespace BannerlordMP.Game
                     var leader = GameBridge.FindHero(message.A);
                     var leaderParty = leader?.PartyBelongedTo;
                     var kingdom = leader?.Clan?.Kingdom;
-                    if (onClient || leaderParty == null || leaderParty.LeaderHero != leader || leaderParty.Army != null || kingdom == null)
+                    if (onClient || (leaderParty?.Army != null && leaderParty.LeaderHero == leader))
                         break;
+                    if (leaderParty == null || leaderParty.LeaderHero != leader || kingdom == null)
+                    {
+                        Log.Info($"Cannot create {message.A}'s army here: " + (kingdom == null ? "their clan is in no kingdom here" : "they lead no party here"));
+                        break;
+                    }
                     var parts = (message.B ?? string.Empty).Split('|');
                     var type = int.TryParse(parts[0], out var t) && Enum.IsDefined(typeof(Army.ArmyTypes), t) ? (Army.ArmyTypes)t : Army.ArmyTypes.Patrolling;
                     var target = parts.Length > 1 ? Find<Settlement>(parts[1]) : null;
@@ -1248,14 +1321,23 @@ namespace BannerlordMP.Game
                     var leaderParty = GameBridge.FindParty(message.B);
                     var army = leaderParty?.Army;
                     if (party == null || !party.IsActive || army == null || army.LeaderParty != leaderParty || party == leaderParty || party.Army == army)
+                    {
+                        if (!onClient && party?.Army != army)
+                            Log.Info($"Cannot call {message.A} to {message.B}'s army here: " +
+                                     (party == null ? "no such party" : !party.IsActive ? "party inactive" : army == null ? "no army" : "not that army's leader"));
                         break;
+                    }
                     if (party.Army != null || (onClient && leaderParty != MobileParty.MainParty))
                         break;
                     KeepInfluence(leaderParty.ActualClan, () => party.Army = army);
                     if (onClient)
                         MakePuppet(party);
-                    else if (party.MapEvent == null)
-                        party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                    else
+                    {
+                        if (party.MapEvent == null)
+                            party.SetMoveEscortParty(leaderParty, MobileParty.NavigationType.Default, false);
+                        Log.Info($"{party.StringId} called to {leaderParty.StringId}'s army; heading there ({party.DefaultBehavior})");
+                    }
                     break;
                 }
                 case WorldEventKind.ArmyPartyAttached:

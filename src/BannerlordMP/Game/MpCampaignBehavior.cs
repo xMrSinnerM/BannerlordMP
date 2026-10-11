@@ -20,7 +20,12 @@ namespace BannerlordMP.Game
             CampaignEvents.WarDeclared.AddNonSerializedListener(this, (a, b, detail) => World(WorldEventKind.War, a?.StringId, b?.StringId));
             CampaignEvents.MakePeace.AddNonSerializedListener(this, (a, b, detail) => World(WorldEventKind.Peace, a?.StringId, b?.StringId));
             CampaignEvents.OnClanChangedKingdomEvent.AddNonSerializedListener(this, (clan, oldKingdom, newKingdom, detail, notify) =>
-                World(WorldEventKind.ClanKingdom, clan?.StringId, newKingdom?.StringId ?? string.Empty));
+            {
+                // A kingdom a player founds exists only in their game until the server makes it too.
+                if (detail == TaleWorlds.CampaignSystem.Actions.ChangeKingdomAction.ChangeKingdomActionDetail.CreateKingdom && newKingdom != null)
+                    World(WorldEventKind.KingdomCreated, clan?.StringId, WorldBridge.DescribeKingdom(newKingdom));
+                World(WorldEventKind.ClanKingdom, clan?.StringId, newKingdom?.StringId ?? string.Empty);
+            });
             CampaignEvents.OnSiegeEventStartedEvent.AddNonSerializedListener(this, siege =>
                 World(WorldEventKind.SiegeStarted, siege?.BesiegedSettlement?.StringId, siege?.BesiegerCamp?.LeaderParty?.StringId));
             CampaignEvents.OnSiegeEventEndedEvent.AddNonSerializedListener(this, siege =>
@@ -75,7 +80,7 @@ namespace BannerlordMP.Game
 
         private static void World(WorldEventKind kind, string a, string b)
         {
-            if (string.IsNullOrEmpty(a))
+            if (string.IsNullOrEmpty(a) || WorldBridge.Founding)
                 return;
             Forward(s => s.OnLocalWorldEvent(kind, a, b ?? string.Empty));
         }

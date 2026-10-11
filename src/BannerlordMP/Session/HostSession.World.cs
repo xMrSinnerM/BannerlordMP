@@ -232,6 +232,11 @@ namespace BannerlordMP.Session
         {
             if (proposal.Kind == WorldEventKind.CompanionJoined || proposal.Kind == WorldEventKind.CompanionLeft || proposal.Kind == WorldEventKind.HeroJoinedParty)
                 return MayChangeCompanion(playerId, proposal);
+            if (proposal.Kind == WorldEventKind.KingdomCreated && GameBridge.FindHero(Players[playerId].HeroId)?.Clan?.StringId != proposal.A)
+            {
+                Log.Info($"Ignoring {NameOf(playerId)}'s {proposal.Kind}: not their clan");
+                return false;
+            }
             if (proposal.Kind != WorldEventKind.HeroCaptured && proposal.Kind != WorldEventKind.HeroReleased)
                 return true;
             var hero = GameBridge.FindHero(proposal.A);
