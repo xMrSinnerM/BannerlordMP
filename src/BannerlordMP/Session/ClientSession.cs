@@ -27,7 +27,7 @@ namespace BannerlordMP.Session
     /// client's clock is behind, so <see cref="TimeSyncController"/> fast-forwards it and the buffered
     /// updates are replayed as the local clock passes them.
     /// </remarks>
-    internal sealed class ClientSession : MpSession
+    internal sealed partial class ClientSession : MpSession
     {
         private const float PartyStateInterval = 0.1f;
         private const float LedgerInterval = 1f;
@@ -114,6 +114,7 @@ namespace BannerlordMP.Session
             TickDailyFinances();
             LogCaptivity();
             ShowPendingVote();
+            TickStateWatch(dt);
             if (Config.ClientSmoothPositions)
                 _smoother.Step(RealSeconds, (id, x, y, land) => GameBridge.SetPosition(Parties.Find(id, RealSeconds), x, y, land));
 
@@ -319,6 +320,13 @@ namespace BannerlordMP.Session
             {
                 if (party == null || !party.IsActive || party == MobileParty.MainParty || party.StringId == null || party.ActualClan != Clan.PlayerClan)
                     continue;
+                if (party.IsCaravan)
+                {
+                    Log.Info($"Client: created caravan {party.StringId}; asking the host to create it");
+                    SendCaravan(party);
+                    WorldBridge.MakePuppet(party);
+                    continue;
+                }
                 if (!party.IsLordParty || party.LeaderHero == null)
                 {
                     Log.Info($"Client: created party {party.StringId} is not a clan party; the server does not know about it");
@@ -501,6 +509,7 @@ namespace BannerlordMP.Session
 
                 case PartyRosterMessage roster when Config.ClientSyncRosters:
                     WorldBridge.ApplyRosters(Parties.Find(roster.PartyId, RealSeconds), roster.Members, roster.Prisoners);
+                    AfterRemoteRoster(roster.PartyId);
                     break;
 
                 case LedgerStateMessage state when Config.ClientSyncOwnParty:
@@ -588,6 +597,7 @@ namespace BannerlordMP.Session
                     break;
                 case WorldEventMessage worldEvent:
                     WorldBridge.ApplyWorldEvent(worldEvent);
+                    AfterRemoteState(worldEvent);
                     break;
             }
         }
@@ -775,6 +785,15 @@ namespace BannerlordMP.Session
         /// </summary>
         private void ResendOwnClanParty(MobileParty party)
         {
+            if (party.IsCaravan && party.CaravanPartyComponent?.Owner?.Clan == Clan.PlayerClan)
+            {
+                if (_ownPartyResent.TryGetValue(party.StringId, out var sent) && RealSeconds - sent < ResendOwnPartySeconds)
+                    return;
+                _ownPartyResent[party.StringId] = RealSeconds;
+                Log.Info($"Client: the server has no caravan {party.StringId}; sending it again");
+                SendCaravan(party);
+                return;
+            }
             if (party == MobileParty.MainParty || !party.IsLordParty || party.LeaderHero == null || IsPlayerCharacter(party.LeaderHero))
                 return;
             if (_ownPartyResent.TryGetValue(party.StringId, out var at) && RealSeconds - at < ResendOwnPartySeconds)

@@ -87,6 +87,7 @@ namespace BannerlordMP.Session
                 CheckPursuits();
             }
 
+            TickStateRelay(dt);
             _worldTimer += dt;
             if (_worldTimer < WorldSyncInterval)
                 return;
@@ -122,12 +123,22 @@ namespace BannerlordMP.Session
                 }
 
                 case WorldEventMessage proposal:
-                    if (!MayChangeHero(playerId, proposal))
+                    if (!MayChangeHero(playerId, proposal) || !MayChangeState(playerId, proposal))
                         return true;
+                    if (proposal.Kind == WorldEventKind.CaravanCreated)
+                    {
+                        string problem = null;
+                        WorldBridge.Remote(() => problem = StateSync.CreateCaravan(proposal.A, proposal.B, GameBridge.FindHero(Players[playerId].HeroId)?.Clan));
+                        if (problem != null)
+                            Log.Info($"Could not create {NameOf(playerId)}'s caravan {proposal.A}: {problem}");
+                        return true;
+                    }
                     // A player's own action changed the world on their machine (took a castle, killed a lord, joined a
                     // kingdom). Friends trust each other: apply it; OnLocalWorldEvent then relays it to everyone.
                     Log.Info($"{NameOf(playerId)} changed the world: {proposal}");
                     WorldBridge.ApplyWorldEvent(proposal);
+                    if (proposal.Kind == WorldEventKind.HeroState)
+                        RememberCompanion(proposal.A);
                     return true;
 
                 case DecisionVoteMessage vote:

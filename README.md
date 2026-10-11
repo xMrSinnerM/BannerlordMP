@@ -3,7 +3,7 @@
 A Bannerlord module that lets two or more players share one campaign map. Each player controls their own
 hero and party; the host's game runs the world.
 
-> **Status: v0.3.35, early prototype. Untested in-game so far.** It compiles against the official
+> **Status: v0.3.36, early prototype. Untested in-game so far.** It compiles against the official
 > Bannerlord **1.4.8.119303** reference assemblies and the game-independent logic is unit tested, but
 > nobody has played it yet. Expect desyncs; see [Known limitations](#known-limitations).
 
@@ -126,6 +126,15 @@ happens.
 | Your party | Only you manage it. On the server, the AI doesn't upgrade your troops, buy or sell for you, recruit, or make troops desert because of a lord's wage limit. Desertion from low morale or an oversized party still happens, as in single player |
 | Clan parties you create | A party you make for a clan member (clan screen) is created on the server too; the server's AI leads it, as single player's AI leads your clan parties, and everyone sees it move. Its troops are kept accurate on your machine wherever it is |
 | Your armies | An army you make is made on the server too. The parties you call travel to you there, and once they reach you they join your army on your machine and move with you. Cohesion is worked out by your game, as in single player; leaving, dismissing a party or disbanding is shared. If you leave the game, your army breaks up |
+| Mercenary contracts | Joining a kingdom as a mercenary (and becoming a vassal later) is the same on the server |
+| Garrisons and dungeons | Troops you leave in or take from a garrison, and prisoners you put in or take from a dungeon, change the server's too |
+| Your fiefs | Governor, building queue, daily project, garrison wage limit and auto-recruitment are yours to set; building progress, loyalty, security, prosperity and food come from the server |
+| Your kingdom | Policies you set as ruler reach the server; policy changes from the server reach you |
+| Your party's roles | Scout, quartermaster, surgeon and engineer |
+| Companions' development | Gear, skills, focus, attributes, perks, health and level of companions travel both ways: what your game changes (battles you fight, gear you give them) goes to the server, what the server changes (healing, battles of your clan parties) comes to you |
+| Relations and marriages | Relation changes involving you or your clan, and marriages, reach the server |
+| Raided villages | A village you loot is looted on the server; villages looted or recovering on the server are shown to everyone |
+| Workshops and caravans | Buying, selling or changing a workshop reaches the server; a caravan you send out is created on the server, which runs it |
 | Your clan's decisions | Only you make them. On the server, the AI cannot make your clan join or leave a kingdom, marry off your hero, declare war or make peace for your faction, propose kingdom decisions in your name, or replace your clan leader. Forced changes (a kingdom being destroyed) still happen |
 
 ## Known limitations
@@ -135,13 +144,12 @@ happens.
 - **Not shared yet:**
   - two players trading in the same town at the same time each see the market as it was when they entered
     (both trades still count on the server)
-  - workshops, tournaments and other settlement details beyond the market
+  - tournaments
   - siege progress details (siege engines, bombardment) beyond the siege itself
-  - raids
+  - raids in progress (a village you burn is shared once it is looted, not while you raid it)
   - quests
-  - relations
-  - marriages
-  - caravans you create yourself (clan parties are shared)
+  - income from workshops and caravans is worked out by your game from what it knows; whether it matches single
+    player hasn't been checked yet
   - joining another lord's or another player's army
   - joint battles (players can't fight in the same battle or attack each other)
 - **Mirrored parties are stand-ins.** A party the server spawns after you joined appears with the right

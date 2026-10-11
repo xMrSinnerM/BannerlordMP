@@ -32,7 +32,7 @@ Release (every fix the owner should try):
 1. Bump the version in **three** places: `Directory.Build.props` (`<Version>`),
    `src/BannerlordMP/_Module/SubModule.xml` (`v0.3.x`), and the status line in `README.md`.
 2. If any message layout changed: bump `ProtocolVersion` in `src/BannerlordMP.Core/Protocol/MessageCodec.cs`
-   (currently 12) and tell the owner to update both PCs.
+   (currently 13) and tell the owner to update both PCs.
 3. `rm -rf artifacts && dotnet build src/BannerlordMP -c Release`, then
    `(cd artifacts && zip -qr ../BannerlordMP-v0.3.x.zip Modules)` (zips are git-ignored; delete old ones).
 4. Commit, push, and send the zip to the owner. Install = replace `Modules/BannerlordMP` in the game folder
@@ -96,6 +96,12 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.36 the owner asked for everything a player does to reach the server. `Game/StateSync.cs` + watchers in
+  `ClientSession.State.cs` / `HostSession.State.cs`, `WorldEvent`s 19–28, protocol 13: garrison/dungeon roster changes,
+  fief settings (governor, build queue, daily project, wage limit, auto-recruit; host sends levels, loyalty, food...),
+  kingdom policies, party roles, relations, marriages, looted villages, companions' development (ledger hero keys via
+  `WorldBridge.CaptureHero`/`ApplyCompanionDelta`), workshop ownership, caravans (`StateSync.CreateCaravan`), mercenary
+  contracts (ClanKingdom B carries "m" and the award multiplier). Workshop/caravan income is unverified.
 - v0.3.35 a kingdom a player founded existed only in their game (the server's copy of the clan stayed kingdomless),
   so the server never made their army and the called companion party never came → `WorldEvent` KingdomCreated (18,
   protocol 12): the founder's game describes it, the host founds it with `KingdomManager.CreateKingdom`, gives it the
