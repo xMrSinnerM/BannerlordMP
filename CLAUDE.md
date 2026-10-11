@@ -96,6 +96,10 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.34 companion clan parties still stood still: `LordPartyComponent.CreateLordParty` treats the id as a prefix and
+  adds `_party_1`, so the server's copy got a different id than the client's (and the client's copies of new AI lords
+  too); nothing matched up, army joins found no party → `WorldBridge.CreateLordParty` sets the exact id; the host renames
+  a clan party created under the wrong id; resending a clan party resends the player's army after it.
 - v0.3.33 the host's siege AI assaulted for a besieging player (their puppet had a besiege order): it fought the battle
   itself (hundreds of the player's troops lost), took the town/castle, and the owner change ended the player's own
   siege halfway on the client (NRE in `KingdomManager.SiegeCompleted`) → attack menu stuck, Leave dead, crash on Attack.

@@ -782,6 +782,9 @@ namespace BannerlordMP.Session
             _ownPartyResent[party.StringId] = RealSeconds;
             Log.Info($"Client: the server has no clan party {party.StringId} (led by {party.LeaderHero.StringId}); sending it again");
             Net.SendToAll(WorldBridge.DescribeParty(party, GameBridge.NowHours));
+            // The host could not put a party it did not have into our army: send the army again after it.
+            if (party.Army != null && party.Army.LeaderParty == MobileParty.MainParty)
+                _ownArmyChanged = true;
         }
 
         /// <summary>Asks the player about the next pending kingdom decision, when they are free on the map.</summary>

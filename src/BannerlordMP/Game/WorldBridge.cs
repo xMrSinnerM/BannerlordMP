@@ -465,7 +465,7 @@ namespace BannerlordMP.Game
 
                 if (message.IsLordParty && leader != null && leader.IsAlive && leader.PartyBelongedTo == null)
                 {
-                    party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    party = CreateLordParty(message.PartyId, leader, position, home);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                 }
                 else
@@ -481,6 +481,18 @@ namespace BannerlordMP.Game
                 GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
                 MakePuppet(party);
             });
+            return party;
+        }
+
+        /// <summary>
+        /// A lord party with exactly this id. The game treats the id as a prefix and adds "_party_1" to it, so a party
+        /// copied from another machine got a different id there and the two never matched up.
+        /// </summary>
+        private static MobileParty CreateLordParty(string id, Hero leader, CampaignVec2 position, Settlement home)
+        {
+            var party = LordPartyComponent.CreateLordParty(id, leader, position, 0f, home, leader);
+            if (party.StringId != id)
+                party.StringId = id;
             return party;
         }
 
@@ -551,7 +563,23 @@ namespace BannerlordMP.Game
             var existing = GameBridge.FindParty(message.PartyId);
             if (existing != null)
                 return existing.LeaderHero == leader ? null : "its id is already used by another party";
-            if (leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader)
+            var led = leader.PartyBelongedTo != null && leader.PartyBelongedTo.LeaderHero == leader ? leader.PartyBelongedTo : null;
+            if (led != null && led.ActualClan == clan && led.IsLordParty && led.StringId != message.PartyId)
+            {
+                // Made by v0.3.33 or older under a wrong id (the game added "_party_1" to it): give it the player's id.
+                var oldId = led.StringId;
+                Remote(() =>
+                {
+                    led.StringId = message.PartyId;
+                    GameBridge.ApplyRoster(led.MemberRoster, message.Members);
+                    GameBridge.ApplyRoster(led.PrisonRoster, message.Prisoners);
+                    led.Ai.EnableAi();
+                    led.Ai.SetDoNotMakeNewDecisions(false);
+                });
+                Log.Info($"Clan party {oldId} had the wrong id; renamed it {message.PartyId} to match its player's game");
+                return null;
+            }
+            if (led != null)
                 return $"{leader.Name} already leads a party here";
 
             string problem = null;
@@ -565,7 +593,7 @@ namespace BannerlordMP.Game
                         LeaveSettlementAction.ApplyForCharacterOnly(leader);
                     var home = Find<Settlement>(message.HomeSettlementId) ?? leader.HomeSettlement ?? clan.HomeSettlement;
                     var position = new CampaignVec2(new Vec2(message.X, message.Y), message.IsOnLand);
-                    var party = LordPartyComponent.CreateLordParty(message.PartyId, leader, position, 0f, home, leader);
+                    var party = CreateLordParty(message.PartyId, leader, position, home);
                     GameBridge.ApplyRoster(party.MemberRoster, message.Members);
                     GameBridge.ApplyRoster(party.PrisonRoster, message.Prisoners);
                     // Led by the host's AI from here, as single player's AI leads clan parties.
