@@ -436,7 +436,7 @@ namespace BannerlordMP.Session
                     continue;
                 var target = Parties.Find(player.PartyId, RealSeconds);
                 if (target == null || !target.IsActive || target.CurrentSettlement != null || target.MapEvent != null || target.MapFaction == null
-                    || target.BesiegedSettlement != null || target.SiegeEvent != null)
+                    || target.BesiegedSettlement != null || target.SiegeEvent != null || target.BesiegerCamp != null)
                     continue; // In a town, a battle or a siege of their own: nobody catches them on the map.
                 var center = target.Position.ToVec2();
                 foreach (var chaser in MobileParty.All)

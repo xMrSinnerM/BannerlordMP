@@ -766,6 +766,14 @@ namespace BannerlordMP.Game
                         {
                             var settlement = Find<Settlement>(message.A);
                             var owner = GameBridge.FindHero(message.B);
+                            // Our own siege of it is still going on here: changing the owner under it ends the siege halfway
+                            // (the game threw inside its siege-completed handling), which left the attack menu stuck open
+                            // and crashed the game on Attack. The outcome of our siege is ours to report.
+                            if (settlement?.SiegeEvent?.BesiegerCamp?.LeaderParty == MobileParty.MainParty && Session.MpSession.Current is Session.ClientSession)
+                            {
+                                Log.Info($"Ignoring owner change of {message.A} during our own siege of it");
+                                break;
+                            }
                             if (settlement != null && owner != null && settlement.Owner != owner)
                                 ChangeOwnerOfSettlementAction.ApplyByDefault(owner, settlement);
                             break;

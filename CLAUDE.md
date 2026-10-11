@@ -96,6 +96,11 @@ TaleWorlds namespaces (`MetaDataExtensions` exists three times).
 
 ## Recent history (latest first)
 
+- v0.3.33 the host's siege AI assaulted for a besieging player (their puppet had a besiege order): it fought the battle
+  itself (hundreds of the player's troops lost), took the town/castle, and the owner change ended the player's own
+  siege halfway on the client (NRE in `KingdomManager.SiegeCompleted`) → attack menu stuck, Leave dead, crash on Attack.
+  `PlayerPartyPatches.NoSettlementEncounters` keeps players' parties out of settlement encounters on the host; the
+  client ignores owner changes for a settlement it is besieging. Log showed money was garrison wages (-3038/day).
 - v0.3.31 a clan party made in a town stayed inside that town on the client (snapshots never move parties in a
   settlement) → `WorldBridge.LeaveSettlementIfMovedAway` takes stand-ins out once the server has them elsewhere;
   the host enables the new clan party's AI explicitly and logs its state.
